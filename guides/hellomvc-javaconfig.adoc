@@ -1,0 +1,286 @@
+= Hello Spring MVC Security Java 配置
+Doc Writer <tequlia2pop@gmail.com>
+:toc: macro
+:homepage: http://docs.spring.io/spring-security/site/docs/current/guides/html5/hellomvc-javaconfig.html
+
+Rob Winch, Joe Grandja
+Version 4.2.0.RELEASE
+
+本指南介绍了如何在不使用 XML 的情况下将 Spring Security 添加到现有的 Spring MVC 应用程序中。
+
+toc::[]
+
+[[setting-up-the-sample]]
+== 设置示例
+
+本部分概述了如何在 https://spring.io/tools/sts[Spring Tool Suite (STS) ] 中设置工作区，这样你就可以遵循本指南操作了。下一部分概述了如何将 Spring Security 应用于现有的应用程序的通用步骤。虽然你可以简单地将步骤应用到现有的应用程序，但我们建议你遵循本指南，以降低复杂性。
+
+[[obtaining-the-sample-project]]
+=== 获得示例项目
+
+将 https://github.com/spring-projects/spring-security/archive/4.2.0.RELEASE.zip[Spring Security Distribution] 解压到本地机器上，假设其位置为 __SPRING_SECURITY_HOME__。
+
+[[import-the-insecuremvc-sample-application]]
+=== 导入insecuremvc 示例应用程序
+
+为了跟进，我们建议你将 insecuremvc 示例应用程序导入到 IDE 中。你可以使用任何你喜欢的 IDE，但本指南中的说明将假设你使用的是 Spring Tool Suite（STS）。
+
+TIP: 完整的示例应用程序可以在 __SPRING_SECURITY_HOME__/samples/javaconfig/hellomvc 中找到
+
+* 如果你没有安装 STS，请从 https://spring.io/tools 下载STS
+
+* 启动 STS 并使用以下步骤将示例应用程序导入 STS：
+** **File→Import**
+** **Existing Maven Projects**
+** 点击 **Next**>
+** 点击 **Browse…**
+** 导航到示例（即 __SPRING_SECURITY_HOME__/samples/xml/insecuremvc），然后单击 **OK**
+** 点击 **Finish**
+
+[[running-the-insecuremvc-application]]
+=== 运行 insecuremvc 应用程序
+
+在下面的练习中，我们将修改 `spring-security-samples-xml-insecuremvc` 应用程序。在我们进行任何修改之前，最好先验证示例是否正常工作。执行以下步骤以确保 `spring-security-samples-xml-insecuremvc` 正常工作。
+
+* 右键点击 `spring-security-samples-xml-insecuremvc` 应用程序
+* 选择 **Run As→Run on Server**
+** 选择最新的 tc 服务器
+** 单击 **Finish**
+
+验证应用程序是否正常工作：
+
+* 在 http://localhost:8080/sample/ 上可以看到用户收件箱页面。
+* 尝试点击 Compose 链接并创建消息。应显示消息的详细信息。
+* 现在点击 Inbox 链接并查看列出的消息。你可以单击 summary 链接以再次查看详细信息。
+
+[[securing-the-application]]
+== 保护应用程序
+
+在保护你的应用程序之前，确保可以像 <<running-the-insecuremvc-application>> 那样运行现有的应用程序，这很重要。现在应用程序在没有安全保护的情况下运行，我们准备为我们的应用程序添加安全性。本节演示了向我们的应用程序添加 Spring Security 的最少步骤。
+
+[[updating-your-dependencies]]
+=== 更新依赖
+
+Spring Security GA 发行版包含在 Maven Central 中，因此不需要额外的 Maven 仓库。
+
+为了使用 Spring Security，你必须添加必要的依赖。对于示例，我们将添加以下 Spring Security 依赖：
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+.pom.xml
+----
+<dependencies>
+  <!-- ... other dependency elements ... -->
+  <dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-web</artifactId>
+    <version>4.2.0.RELEASE</version>
+  </dependency>
+  <dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-config</artifactId>
+    <version>4.2.0.RELEASE</version>
+  </dependency>
+</dependencies>
+----
+
+完成此操作后，你需要确保 STS 通过以下方式了解更新的依赖：
+
+* 右键单击 `spring-security-samples-xml-insecuremvc` 应用程序
+* 选择 **Maven→Update project…**
+* 确保选择了项目，然后单击 **OK**
+
+[[creating-your-spring-security-configuration]]
+=== 创建 Spring Security 配置
+
+下一步是创建 Spring Security 配置。
+
+* 右键单击  Package Explorer 视图中的 `spring-security-samples-xml-insecuremvc` 项目
+* 选择 **New→Class**
+* 输入包名 `org.springframework.security.samples.config`
+* 输入类名 `SecurityConfig`
+* 单击 **Finish**
+* 使用以下内容替换文件：
+
+[[security-config-java]]
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.src/main/java/org/springframework/security/samples/config/SecurityConfig.java
+----
+package org.springframework.security.samples.config;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.configuration.*;
+
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Autowired
+    public void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
+        auth
+            .inMemoryAuthentication()
+                .withUser("user").password("password").roles("USER");
+    }
+}
+----
+
+NOTE: configureGlobal 方法的名称并不重要。但是，重要的是仅在使用 `@EnableWebSecurity`，`@EnableGlobalMethodSecurity` 或 `@EnableGlobalAuthentication` 进行注释的类中配置 AuthenticationManagerBuilder。否则会产生不可预测的结果。
+
+[[servlet-api-integration]]
+<<security-config-java, SecurityConfig>> 将：
+
+* 需要对应用程序中的每个 URL 进行认证（authentication）
+* 为你生成一个登录表单
+* 允许用户进行基于表单的认证（用户的**用户名**为 __user__，**密码**为 __password__）
+* 允许用户退出
+* 阻止 http://en.wikipedia.org/wiki/Cross-site_request_forgery[CSRF 攻击]
+* http://en.wikipedia.org/wiki/Session_fixation[Session Fixation] 保护
+* Security Header 集成
+** 用于安全请求的 http://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security[HTTP Strict Transport Security]
+** http://msdn.microsoft.com/en-us/library/ie/gg622941(v=vs.85).aspx[X-Content-Type-Options] 集成
+** 缓存控制（以后可以通过应用程序覆盖，以允许缓存你的静态资源）
+** http://msdn.microsoft.com/en-us/library/dd565647(v=vs.85).aspx[X-XSS-Protection] 集成
+** X-Frame-Options 集成，以帮助防止 http://en.wikipedia.org/wiki/Clickjacking[Clickjacking]
+* 与以下 Servlet API 方法集成
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#getRemoteUser()[HttpServletRequest#getRemoteUser()]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#getUserPrincipal()[HttpServletRequest.html#getUserPrincipal()]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#isUserInRole(java.lang.String)[HttpServletRequest.html#isUserInRole(java.lang.String)]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#login(java.lang.String,%20java.lang.String)[HttpServletRequest.html#login(java.lang.String, java.lang.String)]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#logout()[HttpServletRequest.html#logout()]
+
+[[registering-spring-security-with-the-war]]
+=== 在 war 中注册 Spring Security
+
+我们已经创建了 Spring Security 配置，但是我们仍然需要注册它的战争。 这可以使用以下步骤完成：
+
+* 右键单击 `spring-security-samples-xml-insecuremvc` 项目的  Package Explorer 视图
+* 选择 **New→Class**
+* 输入包名 `org.springframework.security.samples.config`
+* 输入类名 `MessageSecurityWebApplicationInitializer`
+* 单击 **Finish**
+* 使用以下内容替换文件：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.src/main/java/org/springframework/security/samples/config/MessageSecurityWebApplicationInitializer.java
+----
+package org.springframework.security.samples.config;
+
+import org.springframework.security.web.context.*;
+
+public class MessageSecurityWebApplicationInitializer
+      extends AbstractSecurityWebApplicationInitializer {
+}
+----
+
+`MessageSecurityWebApplicationInitializer` 将为应用程序中的每个 URL 自动注册 springSecurityFilterChain Filter。如果在其他 `WebApplicationInitializer` 实例中添加了 Filter，我们可以使用 `@Order` 来控制 Filter 实例的排序。
+
+[[verify-securityconfig-is-loaded]]
+=== 验证 SecurityConfig 是否加载
+
+因为 <<security-config-java,SecurityConfig>> 只是存在，并不意味着我们的 Spring 应用程序知道它。在这种情况下，我们的 Spring 根应用程序上下文使用 MessageWebApplicationInitializer 来初始化，它就包含在我们的 spring-security-samples-javaconfig-messages 项目中。你可以在下面找到它的代码段：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.MessageWebApplicationInitializer.java
+----
+public class MessageWebApplicationInitializer extends
+        AbstractAnnotationConfigDispatcherServletInitializer {
+
+    @Override
+    protected Class<?>[] getRootConfigClasses() {
+        return new Class[] { RootConfiguration.class };
+    }
+
+    // ... other overrides ...
+}
+----
+
+你会注意到它正在加载 `RootConfiguration` 类，它也包括在我们的 spring-security-samples-javaconfig-messages 项目中。
+
+[[root-configuration-java]]
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.RootConfiguration.java
+----
+@Configuration
+@ComponentScan
+public class RootConfiguration {
+}
+----
+
+`@ComponentScan` 正在加载与 `RootConfiguration` 相同的包（和子包）中的所有配置。由于 <<security-config-java,SecurityConfig>> 也在这个包中，它将被加载到我们现有的设置中，此外就没有什么要做的事了。
+
+NOTE: 如果没有加载 <<security-config-java,SecurityConfig>>，我们可以在 <<root-configuration-java,RootConfiguration>> 的类定义上面使用 `@Import(SecurityConfig.class)`，或者添加 <<security-config-java,SecurityConfig>> 作为 `getRootConfigClasses()` 的结果之一。
+
+[[exploring-the-secured-application]]
+=== 对安全的应用程序进行探索
+
+现在像 <<running-the-insecuremvc-application>> 那样启动服务器，当你访问 http://localhost:8080/sample/ 时，系统将提示你使用 Spring Security 自动生成的登录页面。
+
+[[authenticating-to-the-secured-application]]
+==== 对安全的应用程序进行验证
+
+尝试输入无效的用户名和密码：
+
+* **用户名** invalid
+* **密码** invalid
+
+你应该会看到一条错误消息，指出验证失败。现在尝试输入有效的用户名和密码：
+
+* **用户名** user
+* **密码** password
+
+你现在应该会看到我们想要保护的页面。
+
+NOTE: 之所以我们可以成功地使用**用户名** user 和**密码** password，因为这正是我们在 <<security-config-java,SecurityConfig>> 中配置的。
+
+[[displaying-the-user-name]]
+==== 显示用户的名称
+
+现在我们已经认证，让我们看看如果用户验证成功，我们的应用程序如何显示用户名。
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+.messages/src/main/resources/views/layout.html
+----
+<div th:if="${#httpServletRequest.remoteUser != null}">
+    <p th:text="${#httpServletRequest.remoteUser}">
+      sample_user
+    </p>
+</div>
+----
+
+在我们的示例中，我们使用了 http://www.thymeleaf.org/[Thymeleaf]，但任何视图技术都可以。任何技术都可以调用 `HttpServletRequest#getRemoteUser()` 来查看当前的用户，因为 Spring Security 与 <<servlet-api-integration,Servlet API 方法>> 相集成。
+
+WARNING: Thymeleaf 确保用户名被转义以避免 http://en.wikipedia.org/wiki/Cross-site_scripting[XSS vulnerabilities]。无论应用程序如何渲染用户输入的值，它都应确保值被正确转义。
+
+[[logging-out]]
+==== 注销
+
+我们可以查看用户名，但我们如何注销？下面你可以看到我们如何注销。
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+.messages/src/main/resources/views/layout.html
+----
+<form th:action="@{/logout}" method="post">
+    <input type="submit" value="Log out" />
+</form>
+----
+
+为了帮助防止 http://en.wikipedia.org/wiki/Cross-site_request_forgery[CSRF 攻击]，默认情况下，Spring Security Java 配置的注销要求：
+
+* HTTP 方法必须是 POST
+
+* 必须将 CSRF token 添加到请求中。由于我们使用了 `@EnableWebSecurity` 并且正在使用 Thymeleaf，所以 CSRF token 会自动为你添加一个 hidden input（查看源代码）。
+
+NOTE: 如果你没有使用 Spring MVC 标签库 或 Thymeleaf，你可以使用 ServletRequest 的 _csrf 属性来访问 CsrfToken。你可以查看 http://docs.spring.io/spring-security/site/docs/current/guides/html5/helloworld-javaconfig.html[Hello Spring Security Java 配置] ，其中将 CSRF token 包含在 JSP 中。
+
+重新启动应用程序服务器，然后单击 Log out 按钮，看看应用程序是否成功注销。
+
+[[conclusion]]
+== 结论
+
+你现在应该知道在不使用任何 XML的情况下，如何使用 Spring Security 保护你的应用程序。接下来，我们将看到如何 http://docs.spring.io/spring-security/site/docs/current/guides/html5/form-javaconfig.html[自定义我们的登录表单]。

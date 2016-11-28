@@ -1,0 +1,296 @@
+= 创建自定义的登录表单
+Doc Writer <tequlia2pop@gmail.com>
+:toc: macro
+:homepage: http://docs.spring.io/spring-security/site/docs/4.1.3.RELEASE/guides/html5/form-javaconfig.html
+
+Rob Winch, Joe Grandja
+Version 4.2.0.RELEASE
+
+本指南构建了 http://docs.spring.io/spring-security/site/docs/current/guides/html5/hellomvc-javaconfig.html[Hello Spring MVC Security Java 配置]，以说明如何使用 Spring Security Java 配置来配置和使用自定义的登录表单。
+
+toc::[]
+
+[[setting-up-the-sample]]
+== 设置示例
+
+[[obtaining-the-sample-project]]
+=== 获得示例项目
+
+将 https://github.com/spring-projects/spring-security/archive/4.2.0.RELEASE.zip[Spring Security Distribution] 解压到本地机器上，假设其位置为 __SPRING_SECURITY_HOME__。
+
+[[import-the-hellomvc-sample-application]]
+=== 导入 hellomvc 示例应用程序
+
+为了跟进，我们建议你将 hellomvc 示例应用程序导入到 IDE 中。你可以使用任何你喜欢的 IDE，但本指南中的说明将假设你使用的是 Spring Tool Suite（STS）。
+
+TIP: 完整的示例应用程序可以在 __SPRING_SECURITY_HOME__/samples/javaconfig/form 中找到
+
+* 如果你没有安装 STS，请从 https://spring.io/tools 下载STS
+
+* 启动 STS 并使用以下步骤将示例应用程序导入 STS：
+** **File→Import**
+** **Existing Maven Projects**
+** 点击 **Next**>
+** 点击 **Browse…**
+** 导航到示例（即 __SPRING_SECURITY_HOME__/samples/javaconfig/hellomvc），然后单击 **OK**
+** 点击 **Finish**
+
+[[running-the-hellomvc-application]]
+=== 运行 hellomvc 应用程序
+
+在下面的练习中，我们将修改 `spring-security-samples-javaconfig-hellomvc` 应用程序。在我们进行任何修改之前，最好先验证示例是否正常工作。执行以下步骤以确保 `spring-security-samples-javaconfig-hellomvc` 正常工作。
+
+* 右键点击 `spring-security-samples-javaconfig-hellomvc` 应用程序
+* 选择 **Run As→Run on Server**
+** 选择最新的 tc 服务器
+** 单击 **Finish**
+
+验证应用程序是否正常工作：
+
+* 在使用**用户名** user 和**密码** password 进行认证后，可以在 http://localhost:8080/sample/ 上可以看到用户收件箱页面。
+* 尝试点击 Compose 链接并创建消息。应显示消息的详细信息。
+* 现在点击 Inbox 链接并查看列出的消息。你可以单击 summary 链接以再次查看详细信息。
+
+[[overriding-the-default-configure-httpsecurity-method]]
+== 覆盖默认的 configure(HttpSecurity) 方法
+
+正如我们在 http://docs.spring.io/spring-security/site/docs/current/guides/html5/hellomvc-javaconfig.html[Hello Spring MVC Security Java Config] 中所看到的，Spring Security 的 `WebSecurityConfigurerAdapter` 提供了一些方便的默认值，使我们的应用程序可以快速启动和运行。但是，我们的登录表单看起来不像应用程序的其余部分。让我们来看看如何更新我们的配置以使用自定义的表单。
+
+[[default-configure-httpsecurity]]
+=== 默认的 configure(HttpSecurity)
+
+configure(HttpSecurity) 方法的默认配置如下所示：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+protected void configure(HttpSecurity http) throws Exception {
+    http
+        .authorizeRequests()
+            .anyRequest().authenticated() // <1>
+            .and()
+        .formLogin()                      // <2>
+            .and()
+        .httpBasic();                     // <3>
+}
+----
+
+该配置确保了以下内容：
+
+<1> 每个请求都要求进行用户认证
+<2> 支持基于表单的认证
+<3> 支持 HTTP Basic 方式的认证
+
+[[configuring-a-custom-login-page]]
+=== 配置自定义的登录页面
+
+我们将确保在我们的更新中对覆盖的这些默认值进行补偿。打开 `SecurityConfig` 并添加如下所示的 configure 方法：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.src/main/java/org/springframework/security/samples/config/SecurityConfig.java
+----
+// ...
+
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+            .formLogin()
+                .loginPage("/login");
+    }
+
+    // ...
+}
+----
+
+`loginPage("/login")` 一行对 Spring Security 作出了下列指示：
+
+* 当需要认证时，将浏览器重定向到 **/login**
+* 我们负责在请求 **/login** 时渲染登录页面
+* 当身份认证失败时，将浏览器重定向到 ** /login?error**（因为我们没有指定）
+* 我们负责在请求 **/login?error** 时渲染失败页面
+* 当我们成功注销时，将浏览器重定向到 **/login?logout**（因为我们没有指定）
+* 我们负责在请求 **/login?logout** 时渲染一个注销确认页面
+
+继续并启动服务器，尝试访问 http://localhost:8080/sample/  以查看我们的配置是否更新。在许多浏览器中，您会看到类似于 **This webpage has a redirect loop** 的错误。发生了什么事？
+
+[[granting-access-to-unauthenticated-users]]
+=== 对未认证用户授予访问权限
+
+问题在于 Spring Security 正在对我们的自定义登录页面的访问进行保护。实际上发生了以下情况：
+
+* 我们向我们的 Web 应用程序发出请求
+* Spring Security 认为我们没有通过认证
+* 我们被重定向到 **/login**
+* 浏览器请求 **/login**
+* Spring Security 认为我们没有通过认证
+* 我们被重定向到 **/login** ...
+
+要解决这个问题，我们需要指示 Spring Security 允许任何人访问 **/login** URL。我们可以很容易地使用下列更新来实现这一点：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.src/main/java/org/springframework/security/samples/config/SecurityConfig.java
+----
+// ...
+
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+            .formLogin()
+                .loginPage("/login")
+                .permitAll();
+    }
+
+    // ...
+}
+----
+
+方法的 `formLogin().permitAll()` 语句指示 Spring Security 允许对与 `formLogin()` 关联的所有 URL（即 **/login** 和  `/login?error`）进行访问。
+
+NOTE: 默认情况下不允许访问 `formLogin()` URL，因为 Spring Security 需要明确允许的内容和不允许的内容。为了安全起见，最好确保明确地授予对资源的访问权限。
+
+启动服务器并尝试访问 `http://localhost:8080/sample/ ` 以查看我们的配置是否更新。你现在应该得到一个 500 错误，它表示 **Error resolving template "login"**。
+
+[[creating-a-login-page]]
+== 创建登录页面
+
+在 Spring Web MVC 中创建我们的登录页面有两个步骤：
+
+* 创建一个控制器
+* 创建一个视图
+
+[[configuring-a-login-view-controller]]
+=== 配置登录视图的控制器
+
+在 Spring Web MVC 中，第一步是确保我们有一个指向我们的视图的控制器。由于我们的项目将 **javaconfig/messages** 项目添加为依赖，并且它包含了 **/login** 的视图控制器，因此我们不需要在应用程序中创建这个控制器。作为参考，你可以看到以下配置：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+// ...
+
+@EnableWebMvc
+@ComponentScan("org.springframework.security.samples.mvc")
+public class WebMvcConfiguration extends WebMvcConfigurerAdapter {
+
+    // ...
+
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addViewController("/login").setViewName("login");
+        registry.setOrder(Ordered.HIGHEST_PRECEDENCE);
+    }
+}
+----
+
+[[creating-a-login-view]]
+== 创建登录视图
+
+我们现有的配置意味着我们所需要做的就是创建一个包含以下内容的 **login.html** 文件：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.src/main/resources/views/login.html
+----
+<html xmlns:th="http://www.thymeleaf.org">
+  <head th:include="layout :: head(title=~{::title},links=~{})">
+    <title>Please Login</title>
+  </head>
+  <body th:include="layout :: body" th:with="content=~{::content}">
+    <div th:fragment="content">
+        <form name="f" th:action="@{/login}" method="post">               // <1>
+            <fieldset>
+                <legend>Please Login</legend>
+                <div th:if="${param.error}" class="alert alert-error">    // <2>
+                    Invalid username and password.
+                </div>
+                <div th:if="${param.logout}" class="alert alert-success"> // <3>
+                    You have been logged out.
+                </div>
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username"/>        // <4>
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password"/>    // <5>
+                <div class="form-actions">
+                    <button type="submit" class="btn">Log in</button>
+                </div>
+            </fieldset>
+        </form>
+    </div>
+  </body>
+</html>
+----
+
+<1> 我们提交用户名和密码的 URL 与登录表单（即 **/login**）相同，但是是 POST 而非 GET。
+<2> 当认证失败时，浏览器重定向到 **/login?error**，因此我们可以通过检查参数 **error** 是否非 null 来显示错误消息。
+<3> 当我们成功注销时，浏览器被重定向到 **/login?logout**，所以我们可以通过检查参数 **logout** 是否非 null 来显示注销成功消息。
+<4> 用户名应保存在 HTTP 参数 username 上
+<5> 密码应保存在 HTTP 参数 password 上
+
+IMPORTANT: 不显示有关认证失败原因的详细信息。例如，我们不会显示用户不存在，因为这将告诉攻击者他们应该尝试不同的用户名。
+
+TIP: 我们使用 Thymeleaf 会自动将 CSRF token 添加到我们的表单中。如果我们没有使用 Thymleaf 或 Spring MVC 标签库，我们还可以使用 `<input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>` 手动地添加 CSRF token。
+
+启动服务器并尝试访问 http://localhost:8080/sample/ 以查看我们的配置是否更新。我们现在看到了我们的登录页面，但它看起来不漂亮。问题在于我们没有授予对 css 文件的访问权限。
+
+[[grant-access-to-remaining-resources]]
+=== 授予对剩余资源的访问权限
+
+我们需要更新我们的配置，以允许任何人访问我们的资源和我们的退出页面。更新配置如下所示：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+.src/main/java/org/springframework/security/samples/config/SecurityConfig.java
+----
+// ...
+
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .antMatchers("/resources/**").permitAll() // <1>
+                .anyRequest().authenticated()
+                .and()
+            .formLogin()
+                .loginPage("/login")
+                .permitAll()
+                .and()
+            .logout()                                     // <2>
+                .permitAll();
+    }
+
+    // ...
+}
+----
+
+<1> 这允许任何人访问以 **/resources/** 开头的URL。这是我们存储 CSS，javascript 和 images 的地方，任何人都可以查看我们所有的静态资源。
+<2> 正如你所期望的，**logout().permitAll()** 允许任何用户请求退出和查看退出成功 URL。
+
+重新启动服务器并尝试访问 http://localhost:8080/sample/  以查看我们配置是否更新。我们现在看到一个像我们的应用程序的其余部分的自定义登录页面。
+
+* 尝试输入无效的用户名和密码。你将看到显示错误消息。
+* 尝试输入有效的用户名（user）和密码（password）。你将成功认证。
+* 尝试单击 Log Out 按钮。你将看到退出成功的消息
+
+[[conclusion]]
+== 结论
+
+你现在应该知道如何使用 Spring Security Java 配置添加自定义的登录表单。要了解更多，请参考 http://docs.spring.io/spring-security/site/docs/current/guides/html5/index.html[Spring Security Guides 索引页]。
