@@ -1,0 +1,32 @@
+[[samples]]
+= 示例和指南（从这儿开始）
+Doc Writer <tequlia2pop@gmail.com>
+:toc: left
+:homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#samples
+
+如果你正在寻找如何开始使用 Spring Security，最好是从我们的示例应用程序开始。
+
+.示例应用程序
+|===
+| 源代码| 描述| 指南
+
+| https://github.com/spring-projects/spring-security/tree/4.2.0.RELEASE/samples/javaconfig/helloworld[Hello Spring Security]
+| 演示了如何使用基于 Java 的配置将 Spring Security 集成到现有的应用程序中。
+| http://docs.spring.io/spring-security/site/docs/current/guides/html5/helloworld-javaconfig.html[Hello Spring Security Guide]
+
+| https://github.com/spring-projects/spring-security/tree/4.2.0.RELEASE/samples/boot/helloworld[Hello Spring Security Boot]
+| 演示了如何将 Spring Security 集成到现有的 Spring Boot 应用程序中。
+| http://docs.spring.io/spring-security/site/docs/current/guides/html5/helloworld-boot.html[Hello Spring Security Boot Guide]
+
+| https://github.com/spring-projects/spring-security/tree/4.2.0.RELEASE/samples/xml/helloworld[Hello Spring Security XML]
+| 演示了如何使用基于 XML 的配置将 Spring Security 集成到现有的应用程序中。
+| http://docs.spring.io/spring-security/site/docs/current/guides/html5/helloworld-xml.html[Hello Spring Security XML Guide]
+
+| https://github.com/spring-projects/spring-security/tree/4.2.0.RELEASE/samples/javaconfig/hellomvc[Hello Spring MVC Security]
+| 演示了如何将 Spring Security 集成到现有的 Spring MVC 应用程序中。
+| http://docs.spring.io/spring-security/site/docs/current/guides/html5/hellomvc-javaconfig.html[Hello Spring MVC Security Guide]
+
+| https://github.com/spring-projects/spring-security/tree/4.2.0.RELEASE/samples/javaconfig/form[Custom Login Form]
+| 演示了如何创建自定义的登录表单。
+| http://docs.spring.io/spring-security/site/docs/current/guides/html5/form-javaconfig.html[Custom Login Form Guide]
+|===

@@ -1,0 +1,209 @@
+[[csrf]]
+= 跨站请求伪造（Cross Site Request Forgery，CSRF）
+Doc Writer <tequlia2pop@gmail.com>
+:toc: left
+:homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#csrf
+
+本节讨论 Spring Security 的 http://en.wikipedia.org/wiki/Cross-site_request_forgery[跨站点请求伪造（CSRF）] 支持。
+
+[[csrf-attacks]]
+== CSRF 攻击
+
+在讨论 Spring Security 如何保护应用程序不受 CSRF 攻击之前，我们将解释 CSRF 攻击是什么。让我们来看一个具体的例子，以便更好地了解。
+
+假设你的银行网站提供了一个表单，它允许当前登录的用户将资金转移到另一个银行帐户。例如，HTTP 请求可能如下所示：
+
+[literal]
+----
+POST /transfer HTTP/1.1
+Host: bank.example.com
+Cookie: JSESSIONID=randomid; Domain=bank.example.com; Secure; HttpOnly
+Content-Type: application/x-www-form-urlencoded
+
+amount=100.00&routingNumber=1234&account=9876
+----
+
+现在假设你通过了银行网站的认证，在没有退出的前提下访问了一个恶意网站。恶意网站包含具有以下表单的 HTML 页面：
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+----
+<form action="https://bank.example.com/transfer" method="post">
+<input type="hidden"
+	name="amount"
+	value="100.00"/>
+<input type="hidden"
+	name="routingNumber"
+	value="evilsRoutingNumber"/>
+<input type="hidden"
+	name="account"
+	value="evilsAccountNumber"/>
+<input type="submit"
+	value="Win Money!"/>
+</form>
+----
+
+谁都喜欢赢钱，所以你点击了提交按钮。在此过程中，你无意中将 100 美元转给了恶意用户。这是因为，虽然恶网站不能看到你的 cookie，但是与你的银行关联的 cookie 仍然与请求一起发送了。
+
+最糟糕的是，整个过程可能已经使用 JavaScript 自动化。这意味着你甚至不需要点击按钮。那么我们如何保护自己免受这种攻击呢？
+
+[[synchronizer-token-pattern]]
+== 同步 token 模式
+
+问题在于来自银行网站的 HTTP 请求和来自恶意网站的请求是完全相同的。这意味着没有办法拒绝来自恶意网站的请求，并允许来自银行网站的请求。为了防止 CSRF 攻击，我们需要确保请求中有某些内容是恶意站点无法提供的。
+
+一个解决方案是使用 https://www.owasp.org/index.php/Cross-Site_Request_Forgery_(CSRF)_Prevention_Cheat_Sheet#General_Recommendation:_Synchronizer_Token_Pattern[Synchronizer Token Pattern]。此解决方案确保每个请求除了 sesion cookie 之外，还需要随机生成的 token 作为 HTTP 参数。提交请求时，服务器必须查找参数的期望值，并将其与请求中的实际值进行比较。如果值不匹配，请求将失败。
+
+We can relax the expectations to only require the token for each HTTP request that updates state. This can be safely done since the same origin policy ensures the evil site cannot read the response.此外，我们不希望在 HTTP GET 中包含随机 token，因为这可能导致 token 泄露。
+
+让我们来看看我们的例子会如何改变。假设随机生成的 token 保存在名为 _csrf 的 HTTP 参数中。例如，转账的请求将如下所示：
+
+[literal]
+----
+POST /transfer HTTP/1.1
+Host: bank.example.com
+Cookie: JSESSIONID=randomid; Domain=bank.example.com; Secure; HttpOnly
+Content-Type: application/x-www-form-urlencoded
+
+amount=100.00&routingNumber=1234&account=9876&_csrf=<secure-random>
+----
+
+你会注意到，我们添加了 _csrf 参数，并将它的值设置为一个随机值。现在恶意网站将无法猜测 _csrf 参数的正确值（必须在恶意网站上明确提供），并且当服务器将实际 token 与预期 token 进行比较时，转账将失败。
+
+[[when-to-use-csrf-protection]]
+== 何时使用 CSRF 防护
+
+什么时候应该使用 CSRF 防护？我们的建议是对正常用户通过浏览器处理的任何请求都应该使用 CSRF 防护。如果你只创建由非浏览器客户端使用的服务，则可能需要禁用 CSRF 防护。
+
+[[csrf-protection-and-jsons]]
+=== CSRF 防护和 JSON
+
+一个常见的问题是“我需要保护 javascript 的 JSON 请求吗？” 简短的答案是，看具体的情况。但是，你必须非常小心，因为 CSRF 漏洞可能会影响 JSON 请求。例如，恶意用户可以 http://blog.opensecurityresearch.com/2012/02/json-csrf-with-parameter-padding.html[使用下列表单通过 JSON 创建 CSRF]：
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+----
+<form action="https://bank.example.com/transfer" method="post" enctype="text/plain">
+<input name='{"amount":100,"routingNumber":"evilsRoutingNumber","account":"evilsAccountNumber", "ignore_me":"' value='test"}' type='hidden'>
+<input type="submit"
+	value="Win Money!"/>
+</form>
+----
+
+这将产生以下 JSON 结构
+
+[source,json,indent=0]
+[subs="verbatim,quotes"]
+----
+{ "amount": 100,
+"routingNumber": "evilsRoutingNumber",
+"account": "evilsAccountNumber",
+"ignore_me": "=test"
+}
+----
+
+If an application were not validating the Content-Type, then it would be exposed to this exploit. Depending on the setup, a Spring MVC application that validates the Content-Type could still be exploited by updating the URL suffix to end with ".json" as shown below:
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+----
+<form action="https://bank.example.com/transfer.json" method="post" enctype="text/plain">
+<input name='{"amount":100,"routingNumber":"evilsRoutingNumber","account":"evilsAccountNumber", "ignore_me":"' value='test"}' type='hidden'>
+<input type="submit"
+	value="Win Money!"/>
+</form>
+----
+
+[[csrf-and-stateless-browser-applications]]
+=== CSRF 和无状态浏览器应用程序
+
+如果我的应用程序是无状态的，怎么办？这并不一定意味着你是受保护的。事实上，如果用户不需要在给定请求的 Web 浏览器中执行任何操作，他们仍然容易可能受到 CSRF 攻击。
+
+例如，考虑一个应用程序使用了包含所有状态的自定义 cookie 来进行认证，而不是使用 JSESSIONID。当发生 CSRF 攻击时，自定义 cookie 将与请求一起发送，其方式与在上一个示例中发送 JSESSIONID cookie 的方式相同。
+
+使用基本认证的用户也容易受到 CSRF 攻击，因为浏览器将自动在任何请求中包含用户名和密码，其方式与在上一个示例中发送 JSESSIONID cookie 的方式相同。
+
+[[csrf-using]]
+== 使用 Spring Security CSRF 防护
+
+那么使用 Spring Security 保护我们的网站免受 CSRF 攻击有什么必要的步骤？ 使用 Spring Security 的 CSRF 保护的步骤如下：
+
+* <<csrf-use-proper-verbs>>
+* <<csrf-configure>>
+* <<csrf-include-csrf-token>>
+
+[[csrf-use-proper-verbs]]
+=== 使用正确的 HTTP 方法
+
+防止 CSRF 攻击的第一步是确保你的网站使用正确的 HTTP 方法。具体来说，在使用 Spring Security 的 CSRF 支持之前，你需要确定你的应用程序使用 PATCH，POST，PUT 和/或 DELETE 来修改状态。
+
+这不是 Spring Security 支持的限制，而是正确的 CSRF 预防的一般要求。原因是在 HTTP GET 中包含私有信息可能导致信息泄露。有关使用 POST 而不是 GET 来获取敏感信息的一般指导，请参阅 http://www.w3.org/Protocols/rfc2616/rfc2616-sec15.html#sec15.1.3[RFC 2616 Section 15.1.3 Encoding Sensitive Information in URI’s]。
+
+[[csrf-configure]]
+=== 配置 CSRF 防护
+
+下一步是在应用程序中引入 Spring Security 的 CSRF 防护。一些框架通过使用户的会话失效来处理无效的 CSRF token，但这会导致 <<csrf-logout, 自己的问题>>。相反，默认情况下，Spring Security 的 CSRF 防护将导致一个 HTTP 403 access denied。可以通过配置 `AccessDeniedHandler` 来定制，它可以以不同方式来处理 `InvalidCsrfTokenException`。
+
+从 Spring Security 4.0 开始，XML 配置默认启用 CSRF 防护。如果要禁用 CSRF 防护，则可以在下面看到相应的 XML 配置。
+
+[source,xml,indent=0]
+[subs="verbatim,quotes"]
+----
+<http>
+	<!-- ... -->
+	<csrf disabled="true"/>
+</http>
+----
+
+Java 配置默认启用 CSRF 防护。如果要禁用 CSRF，则可以在下面看到相应的 Java 配置。有关如何配置 CSRF 防护的其他定制，请参阅 csrf() 的Javadoc。
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+@EnableWebSecurity
+public class WebSecurityConfig extends
+WebSecurityConfigurerAdapter {
+
+@Override
+protected void configure(HttpSecurity http) throws Exception {
+	http
+	.csrf().disable();
+}
+}
+----
+
+[[csrf-include-csrf-token]]
+=== 包含 CSRF Token
+
+[[csrf-include-csrf-token-form]]
+==== 表单提交
+
+最后一步是确保在所有 PATCH，POST，PUT 和 DELETE 方法中包含了 CSRF token。一种方法是使用 `_csrf` 请求属性来获取当前的 `CsrfToken`。使用 JSP 执行此操作的示例如下所示：
+
+[source,jsp,indent=0]
+[subs="verbatim,quotes"]
+----
+<c:url var="logoutUrl" value="/logout"/>
+<form action="${logoutUrl}"
+	method="post">
+<input type="submit"
+	value="Log out" />
+<input type="hidden"
+	name="${_csrf.parameterName}"
+	value="${_csrf.token}"/>
+</form>
+----
+
+更容易的方法是使用 Spring Security JSP 标签库的 <<the-csrfinput-tag, csrfInput 标签>>。
+
+NOTE: 如果你使用了 Spring MVC `<form:form>` 标签或 http://www.thymeleaf.org/whatsnew21.html#reqdata[Thymeleaf 2.1+] 并且使用了 `@EnableWebSecurity`，`CsrfToken` 会自动包含（使用了 `CsrfRequestDataValueProcessor`）。
+
+[[csrf-include-csrf-token-ajax]]
+==== Ajax and JSON 请求
+
+[[csrf-cookie]]
+==== CookieCsrfTokenRepository
+
+== CSRF Caveats
+
+== Overriding Defaults

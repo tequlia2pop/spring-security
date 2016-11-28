@@ -1,0 +1,413 @@
+[[jc]]
+= Java配置
+Doc Writer <tequlia2pop@gmail.com>
+:toc: left
+:homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#jc
+
+Spring 3.1 为 Spring 框架添加了对 http://docs.spring.io/spring/docs/3.1.x/spring-framework-reference/html/beans.html#beans-java[Java 配置] 的常规支持。自 Spring Security 3.2 开始支持 Spring Security Java 配置，使用户不使用任何 XML 就能够轻松地配置 Spring Security。
+
+如果你熟悉 <<ns-config,Security Namespace Configuration>>，那么你应该发现它和 Security Java 配置支持之间有几个相似之处。
+
+NOTE: Spring Security 提供了 https://github.com/spring-projects/spring-security/tree/master/samples/javaconfig[大量示例应用程序] 来演示 Spring Security Java 配置的使用。
+
+[[hello-web-security-java-configuration]]
+== Hello Web Security Java 配置
+
+第一步是创建我们的 Spring Security Java 配置。该配置会创建一个名为 `springSecurityFilterChain` 的 Servlet 过滤器，它负责应用程序所有的安全（保护应用程序 URL，验证提交的用户名和密码，重定向到登录表单等）。你可以在下面找到 Spring Security Java 配置的最基本的例子：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+import org.springframework.beans.factory.annotation.Autowired;
+
+import org.springframework.context.annotation.*;
+import org.springframework.security.config.annotation.authentication.builders.*;
+import org.springframework.security.config.annotation.web.configuration.*;
+
+@EnableWebSecurity
+public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+
+	@Bean
+	public UserDetailsService userDetailsService() throws Exception {
+		InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+		manager.createUser(User.withUsername("user").password("password").roles("USER").build());
+		return manager;
+	}
+}
+----
+
+你不需要做太多的配置，但实际上已经做了很多配置。你可以在下面找到功能的摘要：
+
+* 需要对应用程序中的每个 URL 进行认证
+* 为你生成登录表单
+* 允许用户进行基于表单的认证（用户的**用户名**为 __user__，**密码**为 __password__）
+* 允许用户退出
+* 阻止 http://en.wikipedia.org/wiki/Cross-site_request_forgery[CSRF 攻击]
+* http://en.wikipedia.org/wiki/Session_fixation[Session Fixation] 保护
+* Security Header 集成
+** 用于安全请求的 http://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security[HTTP Strict Transport Security]
+** http://msdn.microsoft.com/en-us/library/ie/gg622941(v=vs.85).aspx[X-Content-Type-Options] 集成
+** 缓存控制（以后可以通过应用程序覆盖，以允许缓存你的静态资源）
+** http://msdn.microsoft.com/en-us/library/dd565647(v=vs.85).aspx[X-XSS-Protection] 集成
+** X-Frame-Options 集成，以帮助防止 http://en.wikipedia.org/wiki/Clickjacking[Clickjacking]
+* 与以下 Servlet API 方法集成
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#getRemoteUser()[HttpServletRequest#getRemoteUser()]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#getUserPrincipal()[HttpServletRequest.html#getUserPrincipal()]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#isUserInRole(java.lang.String)[HttpServletRequest.html#isUserInRole(java.lang.String)]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#login(java.lang.String,%20java.lang.String)[HttpServletRequest.html#login(java.lang.String, java.lang.String)]
+** http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServletRequest.html#logout()[HttpServletRequest.html#logout()]
+
+[[abstractsecuritywebapplicationinitializer]]
+=== AbstractSecurityWebApplicationInitializer
+
+下一步是在 war 中注册 `springSecurityFilterChain`。在 Servlet 3.0+ 环境中，可以使用 http://docs.spring.io/spring/docs/3.2.x/spring-framework-reference/html/mvc.html#mvc-container-config[Spring 的 WebApplicationInitializer 支持] 的 Java 配置来完成。Spring Security 提供了一个基类 `AbstractSecurityWebApplicationInitializer`，它将确保为你注册 `springSecurityFilterChain`。使用 `AbstractSecurityWebApplicationInitializer` 的方式取决于我们是否使用了 Spring，或者 Spring Security 是否是我们应用程序中唯一的 Spring 组件。
+
+* <<abstractsecuritywebapplicationinitializer-without-existing-spring>> - 如果你没有使用 Spring，请使用这些说明
+* <<abstractsecuritywebapplicationinitializer-with-spring-mvc>> - 如果你使用了 Spring，请使用这些说明
+
+[[abstractsecuritywebapplicationinitializer-without-existing-spring]]
+=== 在非 Spring 项目中使用 AbstractSecurityWebApplicationInitializer
+
+如果你没有使用 Spring 或 Spring MVC，你需要将 `WebSecurityConfig` 传入超类，以确保配置被选中。你可以找到下面的例子：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+import org.springframework.security.web.context.*;
+
+public class SecurityWebApplicationInitializer
+	extends AbstractSecurityWebApplicationInitializer {
+
+	public SecurityWebApplicationInitializer() {
+		super(WebSecurityConfig.class);
+	}
+}
+----
+
+`SecurityWebApplicationInitializer` 将执行以下操作：
+
+* 为应用程序中的每个 URL 自动注册 springSecurityFilterChain 过滤器
+* 添加一个 ContextLoaderListener，它会加载 <<jc-hello-wsca,WebSecurityConfig>>。
+
+[[abstractsecuritywebapplicationinitializer-with-spring-mvc]]
+=== 在 Spring MVC 中使用 AbstractSecurityWebApplicationInitializer
+
+如果我们在应用程序的其他地方使用了 Spring，我们可能已经有一个 `WebApplicationInitializer` 来加载我们的 Spring 配置。如果我们使用前面的配置，我们会得到一个错误。相反，我们应该使用现有的 `ApplicationContext` 来注册 Spring Security。例如，如果我们正在使用 Spring MVC，我们的 `SecurityWebApplicationInitializer` 将类似于以下内容：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+import org.springframework.security.web.context.*;
+
+public class SecurityWebApplicationInitializer
+	extends AbstractSecurityWebApplicationInitializer {
+
+}
+----
+
+这只会为你的应用程序中的每个 URL 注册 springSecurityFilterChain 过滤器。之后，我们将确保在我们现有的ApplicationInitializer 中加载 `WebSecurityConfig`。例如，如果我们正在使用 Spring MVC，可以在 `getRootConfigClasses()` 中添加它。
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+public class MvcWebApplicationInitializer extends
+		AbstractAnnotationConfigDispatcherServletInitializer {
+
+	@Override
+	protected Class<?>[] getRootConfigClasses() {
+		return new Class[] { WebSecurityConfig.class };
+	}
+
+	// ... other overrides ...
+}
+----
+
+[[jc-httpsecurity]]
+== HttpSecurity
+
+到目前为止，我们的 <<jc-hello-wsca,WebSecurityConfig>> 只包含了有关如何验证用户的信息。Spring Security 如何知道我们想要求对所有用户进行认证？ Spring Security 如何知道我们要支持基于表单的认证？ 其原因是 `WebSecurityConfigurerAdapter` 在 `configure(HttpSecurity http)` 方法中提供了一个默认的配置，如下所示：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+protected void configure(HttpSecurity http) throws Exception {
+	http
+		.authorizeRequests()
+			.anyRequest().authenticated()
+			.and()
+		.formLogin()
+			.and()
+		.httpBasic();
+}
+----
+
+上面的默认配置：
+
+* 确保对应用程序的任何请求需要对用户进行认证
+* 允许用户使用基于表单的登录进行认证
+* 允许用户使用 HTTP Basic 认证进行验证
+
+你会注意到此配置与 XML 命名空间配置非常相似：
+
+[source,html,indent=0]
+[subs="verbatim,quotes"]
+----
+<http>
+	<intercept-url pattern="/**" access="authenticated"/>
+	<form-login />
+	<http-basic />
+</http>
+----
+
+Java 配置使用的 `and()` 方法相当于 XML 的结束闭合标签，这允许我们继续配置其上一级（parent）。如果你查看代码，那么你会发现，我想配置授权的请求 __and__ 配置表单登录 __and_ 配置 HTTP Basic 认证。
+
+
+但是，Java 配置具有不同的默认 URL 和参数。创建自定义登录页面时请记住这一点。结果是我们的 URL 更加 RESTful。此外，有一点不是很明显，我们使用 Spring Security 有助于防止 https://www.owasp.org/index.php/Information_Leak_(information_disclosure)[信息泄漏（information leaks）]。 例如：
+
+[[jc-form]]
+== Java 配置和表单登录
+
+你可能想知道提示登录时的登录表单来自哪里，因为我们没有提到任何的 HTML 文件或 JSP。由于 Spring Security 的默认配置没有显式地为登录页面设置 URL，Spring Security 会根据启用的功能自动生成一个 URL，并使用一个 URL 标准值来处理提交的登录，用户在登录后将使用的默认的目标 URL，等等。
+
+虽然自动生成的登录页面对于快速启动和运行很方便，但大多数应用程序都想要提供自己的登录页面。为此，我们可以更新我们的配置，如下所示：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+protected void configure(HttpSecurity http) throws Exception {
+	http
+		.authorizeRequests()
+			.anyRequest().authenticated()
+			.and()
+		.formLogin()
+			.loginPage("/login") // <1>
+			.permitAll();        // <2>
+}
+----
+
+<1> 更新后的配置指定了登录页面的位置。
+<2> 我们必须授予所有用户（例如未经认证的用户）访问登录页面的权限。`formLogin().permitAll()` 方法允许为所有用户授予与基于表单的登录相关联的所有 URL 的访问权限。
+
+使用 JSP 实现的用于当前配置的示例登录页面如下所示：
+
+NOTE: 下面的登录页面表示我们当前的配置。如果某些默认设置不能满足我们的需要，我们可以轻松地更新我们的配置。
+
+[source,jsp,indent=0]
+[subs="verbatim,quotes"]
+----
+<c:url value="/login" var="loginUrl"/>
+<form action="${loginUrl}" method="post">       // <1>
+	<c:if test="${param.error != null}">        // <2>
+		<p>
+			Invalid username and password.
+		</p>
+	</c:if>
+	<c:if test="${param.logout != null}">       // <3>
+		<p>
+			You have been logged out.
+		</p>
+	</c:if>
+	<p>
+		<label for="username">Username</label>
+		<input type="text" id="username" name="username"/>	// <4>
+	</p>
+	<p>
+		<label for="password">Password</label>
+		<input type="password" id="password" name="password"/>	// <5>
+	</p>
+	<input type="hidden"                        // <6>
+		name="${_csrf.parameterName}"
+		value="${_csrf.token}"/>
+	<button type="submit" class="btn">Log in</button>
+</form>
+----
+
+<1> 对 `/login` URL 的 POST 将尝试认证用户
+<2> 如果查询参数 `error` 存在，则认证失败
+<3> 如果查询参数 `logout` 存在，表示用户已成功退出
+<4> 名为 __username__ 的 HTTP 参数必须存在，它表示用户名
+<5> 名为 __password__ 的 HTTP 参数必须存在，它表示密码，
+<6> 我们必须 <<csrf-include-csrf-token,Include the CSRF Token>>。要了解更多，请参阅参考的 <<csrf>> 部分。
+
+[[authorize-requests]]
+== 请求授权
+
+我们的示例要求对应用程序中的每个 URL 都进行用户认证。我们可以通过向 `http.authorizeRequests()` 方法添加多个子节点来指定对 URL 的自定义要求。例如：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+protected void configure(HttpSecurity http) throws Exception {
+	http
+		.authorizeRequests()                                                                // <1>
+			.antMatchers("/resources/**", "/signup", "/about").permitAll()                  // <2>
+			.antMatchers("/admin/**").hasRole("ADMIN")                                      // <3>
+			.antMatchers("/db/**").access("hasRole('ADMIN') and hasRole('DBA')")            // <4>
+			.anyRequest().authenticated()                                                   // <5>
+			.and()
+		// ...
+		.formLogin();
+}
+----
+
+<1> `http.authorizeRequests()` 方法有多个子节点，每个匹配器（matcher）都按它们的声明顺序来考虑。
+<2> 我们指定了用户可以访问的多个 URL 模式。具体来说，如果请求的 URL 以 "/resources/" 开头，等于 "/signup" 或等于 "/about"，则任何用户都可以访问这些请求。
+<3> 以 "/admin/" 开头的任何 URL 将仅限于拥有角色 "ROLE_ADMIN" 的用户。你会注意到，由于我们调用了 `hasRole` 方法，我们不需要指定 "ROLE_" 前缀。
+<4> 以 "/db/"  开头的任何 URL 都要求用户同时拥有 "ROLE_ADMIN" 和 "ROLE_DBA" 角色。 你会注意到，由于我们使用 `hasRole` 表达式，我们不需要指定 "ROLE_" 前缀。
+<5> 任何尚未匹配的 URL 只需要对用户进行认证
+
+[[jc-logout]]
+== 处理退出
+
+使用 `WebSecurityConfigurerAdapter` 时，会自动应用退出功能。默认情况下，访问 URL `/logout` 将会退出，并执行下面事项：
+
+* 使 HTTP Session 无效
+* 清除已配置的任何 RememberMe 认证
+* 清除 `SecurityContextHolder`
+* 重定向到 `/login?logout`
+
+与配置登录功能类似，你还有各种选项可进一步自定义你的退出要求：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+protected void configure(HttpSecurity http) throws Exception {
+	http
+		.logout()                                                                // <1>
+			.logoutUrl("/my/logout")                                                 // <2>
+			.logoutSuccessUrl("/my/index")                                           // <3>
+			.logoutSuccessHandler(logoutSuccessHandler)                              // <4>
+			.invalidateHttpSession(true)                                             // <5>
+			.addLogoutHandler(logoutHandler)                                         // <6>
+			.deleteCookies(cookieNamesToClear)                                       // <7>
+			.and()
+		...
+}
+----
+
+<1> 提供退出支持。在使用 `WebSecurityConfigurerAdapter` 时自动应用退出功能。
+<2> 触发退出的 URL（默认为 `/logout`）。如果启用了 CSRF 保护（默认），则请求也必须是 POST。有关更多信息，请参阅 http://docs.spring.io/spring-security/site/docs/current/apidocs/org/springframework/security/config/annotation/web/configurers/LogoutConfigurer.html#logoutUrl-java.lang.String-[JavaDoc]。
+<3> 退出成功后重定向的 URL。默认值为 `/login?logout`。有关更多信息，请参阅 http://docs.spring.io/spring-security/site/docs/current/apidocs/org/springframework/security/config/annotation/web/configurers/LogoutConfigurer.html#logoutSuccessUrl-java.lang.String-[JavaDoc]。
+<4> 指定一个自定义的 `LogoutSuccessHandler`。如果指定了此参数，将忽略 `logoutSuccessUrl()`。有关更多内容，请参阅 http://docs.spring.io/spring-security/site/docs/current/apidocs/org/springframework/security/config/annotation/web/configurers/LogoutConfigurer.html#logoutSuccessHandler-org.springframework.security.web.authentication.logout.LogoutSuccessHandler-[JavaDoc]。
+<5> 指定在退出时是否使 HttpSession 无效。默认为 `true`。Configures the `SecurityContextLogoutHandler` under the covers.有关更多内容，请参阅 http://docs.spring.io/spring-security/site/docs/current/apidocs/org/springframework/security/config/annotation/web/configurers/LogoutConfigurer.html#invalidateHttpSession-boolean-[JavaDoc]。
+<6> 添加一个 `LogoutHandler`。默认情况下，`SecurityContextLogoutHandler` 作为最后一个 `LogoutHandler` 添加。
+<7> 指定在退出成功时要删除的 Cookie 名称。这是显式添加 `CookieClearingLogoutHandler` 的快捷方式。
+
+NOTE: 当然，也可以使用 XML 命名空间符号来配置退出。有关更多详细信息，请参阅 Spring Security XML 命名空间的 <<nsa-logout,logout 元素>> 文档。
+
+通常，为了定制退出功能，你可以添加 `LogoutHandler` 和/或 `LogoutSuccessHandler` 实现。For many common scenarios, these handlers are applied under the covers when using the fluent API.
+
+[[jc-authentication]]
+== Authentication
+
+[[jc-authentication-inmememory]]
+=== 在内存中认证
+
+我们已经看到了为单个用户配置内存认证的示例。以下是配置多个用户的示例：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+@Bean
+public UserDetailsService userDetailsService() throws Exception {
+	InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+	manager.createUser(User.withUsername("user").password("password").roles("USER").build());
+	manager.createUser(User.withUsername("admin").password("password").roles("USER","ADMIN").build());
+	return manager;
+}
+----
+
+[[jc-authentication-jdbc]]
+=== JDBC 认证
+
+=== LDAP Authentication
+
+=== AuthenticationProvider
+
+[[jc-authentication-userdetailsservice]]
+=== UserDetailsService
+
+你可以通过将自定义的 `UserDetailsService` 公开为一个 bean 来定义自定义认证。例如，以下代码将自定义认证，假设 `SpringDataUserDetailsService` 实现 `UserDetailsService`：
+
+NOTE: 这仅在未填充 `AuthenticationManagerBuilder` 且未定义 `AuthenticationProviderBean` 时使用。
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+@Bean
+public SpringDataUserDetailsService springDataUserDetailsService() {
+	return new SpringDataUserDetailsService();
+}
+----
+
+你还可以通过将 `PasswordEncoder` 公开为一个 bean 来自定义密码的编码方式。例如，如果使用 bcrypt，你可以添加一个 bean 定义，如下所示：
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+@Bean
+public BCryptPasswordEncoder passwordEncoder() {
+	return new BCryptPasswordEncoder();
+}
+----
+
+[[multiple-httpsecurity]]
+== Multiple HttpSecurity
+
+[source,java,indent=0]
+[subs="verbatim,quotes"]
+----
+我们可以配置多个 HttpSecurity 实例，就像我们可以有多个 `<http>` 块。关键是要多次扩展 `WebSecurityConfigurationAdapter`。例如，以下是具有以 `/api/` 开头的 URL 的不同配置的示例。
+
+@EnableWebSecurity
+public class MultiHttpSecurityConfig {
+	@Bean
+	public UserDetailsService userDetailsService() throws Exception {
+		InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+		manager.createUser(User.withUsername("user").password("password").roles("USER").build());
+		manager.createUser(User.withUsername("admin").password("password").roles("USER","ADMIN").build());
+		return manager;
+	}
+
+	@Configuration
+	@Order(1)                                                        // <1>
+	public static class ApiWebSecurityConfigurationAdapter extends WebSecurityConfigurerAdapter {
+		protected void configure(HttpSecurity http) throws Exception {
+			http
+				.antMatcher("/api/**")                               // <2>
+				.authorizeRequests()
+					.anyRequest().hasRole("ADMIN")
+					.and()
+				.httpBasic();
+		}
+	}
+
+	@Configuration                                                   // <3>
+	public static class FormLoginWebSecurityConfigurerAdapter extends WebSecurityConfigurerAdapter {
+
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			http
+				.authorizeRequests()
+					.anyRequest().authenticated()
+					.and()
+				.formLogin();
+		}
+	}
+}
+----
+
+配置认证正常
+
+<1> 创建包含 `@Order` 的 `WebSecurityConfigurerAdapter` 实例，以指定应首先考虑哪个 `WebSecurityConfigurerAdapter`。
+<2> `http.antMatcher` 声明这个 `HttpSecurity` 将只适用于以 `/api/` 开头的 URL
+<3> 创建另一个 `WebSecurityConfigurerAdapter` 实例。如果 URL 不是以 `/api/` 开头，将使用此配置。这个配置在 `ApiWebSecurityConfigurationAdapter` 之后被考虑，因为它的 `@Order` 值大于 `1`（没有 `@Order` 的话默认为最后一个）。
+
+[[jc-method]]
+== 方法安全
+
+从2.0版本开始，Spring Security已经大大提高了对您的服务层方法添加安全性的支持。 它提供对JSR-250注释安全性以及框架的原始@Secured注释的支持。 从3.0，你也可以使用新的基于表达式的注释。 您可以将安全性应用于单个bean，使用intercept-methods元素装饰bean声明，也可以使用AspectJ样式切入点在整个服务层上保护多个bean。
+
+== Post Processing Configured Objects
+
+== Custom DSLs
