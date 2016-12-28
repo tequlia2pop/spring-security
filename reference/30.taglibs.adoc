@@ -1,0 +1,169 @@
+= Spring Security Reference
+Doc Writer <tequlia2pop@gmail.com>
+:toc: left
+:homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#taglibs
+
+[[taglibs]]
+== JSP 标签库
+Spring Security 有自己的标签库，它为访问安全信息和在 JSP 中应用安全约束提供了基本支持。
+
+
+=== 声明标签库
+要使用任何的标签，你必须在 JSP 中声明 security 标签库：
+
+[source,xml]
+----
+<%@ taglib prefix="sec" uri="http://www.springframework.org/security/tags" %>
+----
+
+[[taglibs-authorize]]
+=== authorize 标签
+此标签用于确定是否应该对标签内容进行求值。在 Spring Security 3.0 中，可以通过两种方式来使用它 footnote:[Spring Security 2.0 的遗留选项也受支持，但不鼓励使用。]。第一种方法使用 <<el-access-web,web-security 表达式>>，由标签的 `access` 属性指定。表达式求值将委派给在应用程序上下文中定义的 `SecurityExpressionHandler<FilterInvocation>`（你应该在 `<http>` 名称空间配置中启用 Web 表达式，以确保此服务可用）。所以，例如，你可能有
+
+[source,xml]
+----
+<sec:authorize access="hasRole('supervisor')">
+
+只有在 <tt>GrantedAuthority</tt> 列表中具有 "supervisor" 权限的用户才能看到此内容。
+
+</sec:authorize>
+----
+
+当与 Spring Security PermissionEvaluator 结合使用时，该标签也可用于检查权限。例如：
+
+[source,xml]
+----
+<sec:authorize access="hasPermission(#domain,'read') or hasPermission(#domain,'write')">
+
+This content will only be visible to users who have read or write permission to the Object found as a request attribute named "domain".
+
+</sec:authorize>
+----
+
+一个常见的要求是，如果实际上允许用户点击一个链接的话，才会显示这个链接。我们如何预先确定是否允许某些事情？ 此标签还可以在另一种模式下操作，该模式允许你将特定的 URL 定义为属性。如果允许用户调用该 URL，那么将渲染标签体中的内容，否则将跳过。所以你可能有类似的
+
+[source,xml]
+----
+<sec:authorize url="/admin">
+
+只有有权向 "/admin" URL 发送请求的用户才能看到此内容。
+
+</sec:authorize>
+----
+
+要使用此标签，还必须在应用程序上下文中声明一个 `WebInvocationPrivilegeEvaluator` 实例。如果使用了名称空间，将自动注册一个实例。这是一个 `DefaultWebInvocationPrivilegeEvaluator` 实例，它为所提供的 URL 创建一个虚拟 Web 请求，并调用 security interceptor 来查看请求是成功还是失败。This allows you to delegate to the access-control setup you defined using `intercept-url` declarations within the `<http>` namespace configuration and saves having to duplicate the information (such as the required roles) within your JSPs.这种方法还可以与 `method` 属性组合，提供 HTTP 方法，用于更具体的匹配。
+
+通过将 `var` 属性设置为变量名称，可以将标签计算得到的布尔结果（是否授予或拒绝访问）存储在页面上下文作用域变量中，从而避免在页面中复制并重新计算该条件。
+
+
+==== 为测试禁用 authorization 标签
+对于未授权用户，在网页中隐藏链接并不能阻止他们访问该 URL。例如，他们可以直接将 URL 输入到浏览器中。作为测试过程的一部分，你可能想要揭示隐藏区域，以检查链接是否真的在后端安全。如果将系统属性 `spring.security.disableUISecurity` 设置为 `true`，`authorize` 标签仍将运行，但不会隐藏其内容。默认情况下，它还会使用 `<span class="securityHiddenUI">...</span>` 标签包围内容。这允许你使用特定 CSS 样式（例如不同的背景颜色）来显示“隐藏”的内容。尝试启用了此属性来运行 "tutorial" 示例应用程序。
+
+如果要更改默认 `span` 标签的保卫文本（或使用空字符串将其完全删除），还可以设置 `spring.security.securedUIPrefix` 和 `spring.security.securedUISuffix` 属性。
+
+
+=== authentication 标签
+此标签允许访问存储在 security 上下文中的当前的 `Authentication` 对象。它直接在 JSP 中渲染对象的属性。因此，例如，如果 `Authentication` 的 `principal` 属性是 Spring Security 的 `UserDetails` 对象的实例，那么使用 `<sec:authentication property="principal.username" />` 将渲染当前用户的名称。
+
+当然，没有必要为这种事情使用 JSP 标签，有些人喜欢在视图中保持尽可能少的逻辑。你可以访问 MVC 控制器的 `Authentication` 对象（通过调用 `SecurityContextHolder.getContext().getAuthentication()`），并将数据直接添加到模型中以供视图渲染。
+
+
+=== The accesscontrollist Tag
+This tag is only valid when used with Spring Security's ACL module. It checks a comma-separated list of required permissions for a specified domain object. If the current user has all of those permissions, then the tag body will be evaluated. If they don't, it will be skipped. An example might be
+
+CAUTION: In general this tag should be considered deprecated. Instead use the <<taglibs-authorize>>.
+
+[source,xml]
+----
+<sec:accesscontrollist hasPermission="1,2" domainObject="${someObject}">
+
+This will be shown if the user has all of the permissions represented by the values "1" or "2" on the given object.
+
+</sec:accesscontrollist>
+----
+
+The permissions are passed to the `PermissionFactory` defined in the application context, converting them to ACL `Permission` instances, so they may be any format which is supported by the factory - they don't have to be integers, they could be strings like `READ` or `WRITE`. If no `PermissionFactory` is found, an instance of `DefaultPermissionFactory` will be used. The `AclService` from the application context will be used to load the `Acl` instance for the supplied object. The `Acl` will be invoked with the required permissions to check if all of them are granted.
+
+This tag also supports the `var` attribute, in the same way as the `authorize` tag.
+
+
+=== csrfInput 标签
+如果启用了 CSRF 防护，此标签将为 CSRF 防护 token 插入具有正确名称和值的隐藏表单字段。如果未启用 CSRF 防护，则此标签不输出任何内容。
+
+通常 Spring Security 会为你使用的 `<form:form>` 标签自动插入 CSRF 表单字段，但如果由于某种原因不能使用 `<form:form>`，`csrfInput` 是一个方便的替代。
+
+你应该将此标签放置在 HTML `<form></form>` 块中，就是通常放置其他输入字段的地方。不要把这个标签放在 Spring 的 `<form:form></form:form>` 块中。Spring Security 会自动处理 Spring 的表单。
+
+[source,xml]
+----
+	<form method="post" action="/do/something">
+		<sec:csrfInput />
+		Name:<br />
+		<input type="text" name="name" />
+		...
+	</form>
+----
+
+
+=== The csrfMetaTags Tag
+If CSRF protection is enabled, this tag inserts meta tags containing the CSRF protection token form field and header names and CSRF protection token value. These meta tags are useful for employing CSRF protection within JavaScript in your applications.
+
+You should place `csrfMetaTags` within an HTML `<head></head>` block, where you would normally place other meta tags. Once you use this tag, you can access the form field name, header name, and token value easily using JavaScript. JQuery is used in this example to make the task easier.
+
+[source,xml]
+----
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>CSRF Protected JavaScript Page</title>
+		<meta name="description" content="This is the description for this page" />
+		<sec:csrfMetaTags />
+		<script type="text/javascript" language="javascript">
+
+			var csrfParameter = $("meta[name='_csrf_parameter']").attr("content");
+			var csrfHeader = $("meta[name='_csrf_header']").attr("content");
+			var csrfToken = $("meta[name='_csrf']").attr("content");
+
+			// using XMLHttpRequest directly to send an x-www-form-urlencoded request
+			var ajax = new XMLHttpRequest();
+			ajax.open("POST", "http://www.example.org/do/something", true);
+			ajax.setRequestHeader("Content-Type", "application/x-www-form-urlencoded data");
+			ajax.send(csrfParameter + "=" + csrfToken + "&name=John&...");
+
+			// using XMLHttpRequest directly to send a non-x-www-form-urlencoded request
+			var ajax = new XMLHttpRequest();
+			ajax.open("POST", "http://www.example.org/do/something", true);
+			ajax.setRequestHeader(csrfHeader, csrfToken);
+			ajax.send("...");
+
+			// using JQuery to send an x-www-form-urlencoded request
+			var data = {};
+			data[csrfParameter] = csrfToken;
+			data["name"] = "John";
+			...
+			$.ajax({
+				url: "http://www.example.org/do/something",
+				type: "POST",
+				data: data,
+				...
+			});
+
+			// using JQuery to send a non-x-www-form-urlencoded request
+			var headers = {};
+			headers[csrfHeader] = csrfToken;
+			$.ajax({
+				url: "http://www.example.org/do/something",
+				type: "POST",
+				headers: headers,
+				...
+			});
+
+		<script>
+	</head>
+	<body>
+		...
+	</body>
+</html>
+----
+
+If CSRF protection is not enabled, `csrfMetaTags` outputs nothing.

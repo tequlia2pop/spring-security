@@ -1,0 +1,2326 @@
+= Spring Security Reference
+Doc Writer <tequlia2pop@gmail.com>
+:toc: left
+:homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#appendix-namespace
+
+[[appendix-namespace]]
+== Security 名称空间
+本附录提供了关于 security 命名空间中可用元素的参考，以及他们所创建的底层 bean 的信息（假定你了解各个类以及它们如何协同工作 - 你可以在项目 Javadoc 和本文档的其他地方找到更多信息）。如果你以前没有用过命名空间，请阅读关于命名空间配置的 <<ns-config,介绍性章节>>，因为这是为了补充信息。在根据 schema 编辑配置时，建议使用高质量的 XML 编辑器，因为这将提供可用的元素和属性的上下文信息以及解释其用途的注释。命名空间以 http://www.relaxng.org/[RELAX NG] Compact 格式编写，随后转换为 XSD schema。如果你熟悉此格式，你可能希望直接检查 https://raw.githubusercontent.com/spring-projects/spring-security/master/config/src/main/resources/org/springframework/security/config/spring-security-4.1.rnc[schema 文件]。
+
+[[nsa-web]]
+=== Web 应用程序 Security
+
+[[nsa-debug]]
+==== <debug>
+启用 Spring Security 调试基础结构。这将提供人类可读（多行）的调试信息，以监视进入 security filter 的请求。这可能包括敏感信息，例如请求参数或头，并且应该只在开发环境中使用。
+
+[[nsa-http]]
+==== <http>
+如果在应用程序中使用 `<http>` 元素，则会创建一个名为 "springSecurityFilterChain" 的 `FilterChainProxy` bean，该元素中的配置用于在 `FilterChainProxy` 中构建一个 filter 链。从 Spring Security 3.1 起，可以使用额外的 `http` 元素来添加额外的 filter 链footnote:[ 请参阅 pass：specialcharacters，macros [<<ns-web-xml,介绍性章节>>] 来了解如何设置 `web.xml` 的映射 ]。一些核心 filter 总是在 filter 链中创建，并且其他 filter 将根据存在的属性和子元素被添加到堆栈。标准 filter 的位置是固定的（请参阅命名空间介绍中的 <<filter-stack,filter 顺序表>>），当用户必须在 `FilterChainProxy` bean 中显式配置 filter 链时，可以删除之前版本的框架的常见错误源。当然，如果你需要完全控制配置，你仍然可以这样做。
+
+
+所有需要引用 `AuthenticationManager` 的 filter 都将自动注入由命名空间配置所创建的内部实例中（有关 `AuthenticationManager` 的更多信息，请参阅 <<ns-auth-manager,介绍性章节>>）。
+
+每个 `<http>` 命名空间块总是创建一个 `SecurityContextPersistenceFilter`，一个 `ExceptionTranslationFilter` 和一个 `FilterSecurityInterceptor`。这些是固定的，不能用替代品替代。
+
+
+[[nsa-http-attributes]]
+===== <http> 属性
+`<http>` 元素的属性控制着核心 filter 上的一些属性。
+
+
+[[nsa-http-access-decision-manager-ref]]
+* **access-decision-manager-ref**
+Optional attribute specifying the ID of the `AccessDecisionManager` implementation which should be used for authorizing HTTP requests. By default an `AffirmativeBased` implementation is used for with a `RoleVoter` and an `AuthenticatedVoter`.
+
+
+[[nsa-http-authentication-manager-ref]]
+* **authentication-manager-ref**
+A reference to the `AuthenticationManager` used for the `FilterChain` created by this http element.
+
+
+[[nsa-http-auto-config]]
+* **auto-config**
+Automatically registers a login form, BASIC authentication, logout services. If set to "true", all of these capabilities are added (although you can still customize the configuration of each by providing the respective element). If unspecified, defaults to "false". Use of this attribute is not recommended. Use explicit configuration elements instead to avoid confusion.
+
+
+[[nsa-http-create-session]]
+* **create-session**
+Controls the eagerness with which an HTTP session is created by Spring Security classes. Options include:
+
+** `always` - Spring Security will proactively create a session if one does not exist.
+** `ifRequired` - Spring Security will only create a session only if one is required (default value).
+** `never` - Spring Security will never create a session, but will make use of one if the application does.
+** `stateless` - Spring Security will not create a session and ignore the session for obtaining a Spring `Authentication`.
+
+[[nsa-http-disable-url-rewriting]]
+* **disable-url-rewriting**
+Prevents session IDs from being appended to URLs in the application. Clients must use cookies if this attribute is set to `true`. The default is `true`.
+
+
+[[nsa-http-entry-point-ref]]
+* **entry-point-ref**
+Normally the `AuthenticationEntryPoint` used will be set depending on which authentication mechanisms have been configured. This attribute allows this behaviour to be overridden by defining a customized `AuthenticationEntryPoint` bean which will start the authentication process.
+
+
+[[nsa-http-jaas-api-provision]]
+* **jaas-api-provision**
+If available, runs the request as the `Subject` acquired from the `JaasAuthenticationToken` which is implemented by adding a `JaasApiIntegrationFilter` bean to the stack. Defaults to `false`.
+
+
+[[nsa-http-name]]
+* **name**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-http-once-per-request]]
+* **once-per-request**
+Corresponds to the `observeOncePerRequest` property of `FilterSecurityInterceptor`. Defaults to `true`.
+
+
+[[nsa-http-pattern]]
+* **pattern**
+<<nsa-http,http>> 元素的 pattern 定义控制着那些将通过其定义的 filter 列表进行过滤的请求。根据配置的 <<nsa-http-request-matcher,request-matcher>> 进行解释。如果没有定义 pattern，则所有请求都将匹配，因此应首先声明最具体的 pattern。
+
+
+[[nsa-http-realm]]
+* **realm**
+Sets the realm name used for basic authentication (if enabled). Corresponds to the `realmName` property on `BasicAuthenticationEntryPoint`.
+
+
+[[nsa-http-request-matcher]]
+* **request-matcher**
+Defines the `RequestMatcher` strategy used in the `FilterChainProxy` and the beans created by the `intercept-url` to match incoming requests. Options are currently `mvc`, `ant`, `regex` and `ciRegex`, for Spring MVC, ant, regular-expression and case-insensitive regular-expression respectively. A separate instance is created for each <<nsa-intercept-url,intercept-url>> element using its <<nsa-intercept-url-pattern,pattern>>, <<nsa-intercept-url-method,method>> and <<nsa-intercept-url-servlet-path,servlet-path>> attributes. Ant paths are matched using an `AntPathRequestMatcher`, regular expressions are matched using a `RegexRequestMatcher` and for Spring MVC path matching the `MvcRequestMatcher` is used. See the Javadoc for these classes for more details on exactly how the matching is performed. Ant paths are the default strategy.
+
+
+[[nsa-http-request-matcher-ref]]
+* **request-matcher-ref**
+A reference to a bean that implements `RequestMatcher` that will determine if this `FilterChain` should be used. This is a more powerful alternative to <<nsa-http-pattern,pattern>>.
+
+
+[[nsa-http-security]]
+* **security**
+通过将此属性设置为 `none`，可将请求的 pattern 映射到空的 filter 链。这不会应用任何安全性，Spring Security 的所有功能都不可用。
+
+
+[[nsa-http-security-context-repository-ref]]
+* **security-context-repository-ref**
+Allows injection of a custom `SecurityContextRepository` into the `SecurityContextPersistenceFilter`.
+
+
+[[nsa-http-servlet-api-provision]]
+* **servlet-api-provision**
+Provides versions of `HttpServletRequest` security methods such as `isUserInRole()` and `getPrincipal()` which are implemented by adding a `SecurityContextHolderAwareRequestFilter` bean to the stack. Defaults to `true`.
+
+
+[[nsa-http-use-expressions]]
+* **use-expressions**
+Enables EL-expressions in the `access` attribute, as described in the chapter on <<el-access-web,expression-based access-control>>. The default value is true.
+
+
+[[nsa-http-children]]
+===== <http> 的子元素
+* <<nsa-access-denied-handler,access-denied-handler>>
+* <<nsa-anonymous,anonymous>>
+* <<nsa-cors,cors>>
+* <<nsa-csrf,csrf>>
+* <<nsa-custom-filter,custom-filter>>
+* <<nsa-expression-handler,expression-handler>>
+* <<nsa-form-login,form-login>>
+* <<nsa-headers,headers>>
+* <<nsa-http-basic,http-basic>>
+* <<nsa-intercept-url,intercept-url>>
+* <<nsa-jee,jee>>
+* <<nsa-logout,logout>>
+* <<nsa-openid-login,openid-login>>
+* <<nsa-port-mappings,port-mappings>>
+* <<nsa-remember-me,remember-me>>
+* <<nsa-request-cache,request-cache>>
+* <<nsa-session-management,session-management>>
+* <<nsa-x509,x509>>
+
+
+[[nsa-access-denied-handler]]
+==== <access-denied-handler>
+This element allows you to set the `errorPage` property for the default `AccessDeniedHandler` used by the `ExceptionTranslationFilter`, using the <<nsa-access-denied-handler-error-page,error-page>> attribute, or to supply your own implementation using the<<nsa-access-denied-handler-ref,ref>> attribute. This is discussed in more detail in the section on the <<access-denied-handler,ExceptionTranslationFilter>>.
+
+
+[[nsa-access-denied-handler-parents]]
+===== Parent Elements of <access-denied-handler>
+
+* <<nsa-http,http>>
+
+[[nsa-access-denied-handler-attributes]]
+===== <access-denied-handler> Attributes
+
+
+[[nsa-access-denied-handler-error-page]]
+* **error-page**
+The access denied page that an authenticated user will be redirected to if they request a page which they don't have the authority to access.
+
+
+[[nsa-access-denied-handler-ref]]
+* **ref**
+Defines a reference to a Spring bean of type `AccessDeniedHandler`.
+
+
+[[nsa-cors]]
+==== <cors>
+This element allows for configuring a `CorsFilter`.
+If no `CorsFilter` or `CorsConfigurationSource` is specified and Spring MVC is on the classpath, a `HandlerMappingIntrospector` is used as the `CorsConfigurationSource`.
+
+[[nsa-cors-attributes]]
+===== <cors> Attributes
+The attributes on the `<cors>` element control the headers element.
+
+[[nsa-cors-ref]]
+* **ref**
+Optional attribute that specifies the bean name of a `CorsFilter`.
+
+[[nsa-cors-configuration-source-ref]]
+* **ref**
+Optional attribute that specifies the bean name of a `CorsConfigurationSource` to be injected into a `CorsFilter` created by the XML namespace.
+
+[[nsa-cors-parents]]
+===== Parent Elements of <cors>
+
+* <<nsa-http,http>>
+
+[[nsa-headers]]
+==== <headers>
+This element allows for configuring additional (security) headers to be send with the response. It enables easy configuration for several headers and also allows for setting custom headers through the <<nsa-header,header>> element. Additional information, can be found in the <<headers,Security Headers>> section of the reference.
+
+** `Cache-Control`, `Pragma`, and `Expires` - Can be set using the <<nsa-cache-control,cache-control>> element. This ensures that the browser does not cache your secured pages.
+** `Strict-Transport-Security` - Can be set using the <<nsa-hsts,hsts>> element. This ensures that the browser automatically requests HTTPS for future requests.
+** `X-Frame-Options` - Can be set using the <<nsa-frame-options,frame-options>> element. The http://en.wikipedia.org/wiki/Clickjacking#X-Frame-Options[X-Frame-Options] header can be used to prevent clickjacking attacks.
+** `X-XSS-Protection` - Can be set using the <<nsa-xss-protection,xss-protection>> element. The http://en.wikipedia.org/wiki/Cross-site_scripting[X-XSS-Protection ] header can be used by browser to do basic control.
+** `X-Content-Type-Options` - Can be set using the <<nsa-content-type-options,content-type-options>> element. The http://blogs.msdn.com/b/ie/archive/2008/09/02/ie8-security-part-vi-beta-2-update.aspx[X-Content-Type-Options] header prevents Internet Explorer from MIME-sniffing a response away from the declared content-type. This also applies to Google Chrome, when downloading extensions.
+** `Public-Key-Pinning` or `Public-Key-Pinning-Report-Only` - Can be set using the <<nsa-hpkp,hpkp>> element. This allows HTTPS websites to resist impersonation by attackers using mis-issued or otherwise fraudulent certificates.
+** `Content-Security-Policy` or `Content-Security-Policy-Report-Only` - Can be set using the <<nsa-content-security-policy,content-security-policy>> element. https://www.w3.org/TR/CSP2/[Content Security Policy (CSP)] is a mechanism that web applications can leverage to mitigate content injection vulnerabilities, such as cross-site scripting (XSS).
+** `Referrer-Policy` - Can be set using the <<nsa-referrer-policy,referrer-policy>> element, https://www.w3.org/TR/referrer-policy/[Referrer-Policy] is a mechanism that web applications can leverage to manage the referrer field, which contains the last page the user was on.
+
+[[nsa-headers-attributes]]
+===== <headers> Attributes
+The attributes on the `<headers>` element control the headers element.
+
+
+[[nsa-headers-defaults-disabled]]
+* **defaults-disabled**
+Optional attribute that specifies to disable the default Spring Security's HTTP response headers. The default is false (the default headers are included).
+
+[[nsa-headers-disabled]]
+* **disabled**
+Optional attribute that specifies to disable Spring Security's HTTP response headers. The default is false (the headers are enabled).
+
+
+[[nsa-headers-parents]]
+===== Parent Elements of <headers>
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-headers-children]]
+===== Child Elements of <headers>
+
+
+* <<nsa-cache-control,cache-control>>
+* <<nsa-content-security-policy,content-security-policy>>
+* <<nsa-content-type-options,content-type-options>>
+* <<nsa-frame-options,frame-options>>
+* <<nsa-header,header>>
+* <<nsa-hpkp,hpkp>>
+* <<nsa-hsts,hsts>>
+* <<nsa-referrer-policy,referrer-policy>>
+* <<nsa-xss-protection,xss-protection>>
+
+
+
+[[nsa-cache-control]]
+==== <cache-control>
+Adds `Cache-Control`, `Pragma`, and `Expires` headers to ensure that the browser does not cache your secured pages.
+
+
+[[nsa-cache-control-attributes]]
+===== <cache-control> Attributes
+
+[[nsa-cache-control-disabled]]
+* **disabled**
+Specifies if Cache Control should be disabled. Default false.
+
+
+[[nsa-cache-control-parents]]
+===== Parent Elements of <cache-control>
+
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-hsts]]
+==== <hsts>
+When enabled adds the http://tools.ietf.org/html/rfc6797[Strict-Transport-Security] header to the response for any secure request. This allows the server to instruct browsers to automatically use HTTPS for future requests.
+
+
+[[nsa-hsts-attributes]]
+===== <hsts> Attributes
+
+[[nsa-hsts-disabled]]
+* **disabled**
+Specifies if Strict-Transport-Security should be disabled. Default false.
+
+[[nsa-hsts-include-subdomains]]
+* **include-sub-domains**
+Specifies if subdomains should be included. Default true.
+
+
+[[nsa-hsts-max-age-seconds]]
+* **max-age-seconds**
+Specifies the maximum amount of time the host should be considered a Known HSTS Host. Default one year.
+
+
+[[nsa-hsts-request-matcher-ref]]
+* **request-matcher-ref**
+The RequestMatcher instance to be used to determine if the header should be set. Default is if HttpServletRequest.isSecure() is true.
+
+
+[[nsa-hsts-parents]]
+===== Parent Elements of <hsts>
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-hpkp]]
+==== <hpkp>
+When enabled adds the https://tools.ietf.org/html/rfc7469[Public Key Pinning Extension for HTTP] header to the response for any secure request. This allows HTTPS websites to resist impersonation by attackers using mis-issued or otherwise fraudulent certificates.
+
+
+[[nsa-hpkp-attributes]]
+===== <hpkp> Attributes
+
+[[nsa-hpkp-disabled]]
+* **disabled**
+Specifies if HTTP Public Key Pinning (HPKP) should be disabled. Default true.
+
+[[nsa-hpkp-include-subdomains]]
+* **include-sub-domains**
+Specifies if subdomains should be included. Default false.
+
+
+[[nsa-hpkp-max-age-seconds]]
+* **max-age-seconds**
+Sets the value for the max-age directive of the Public-Key-Pins header. Default 60 days.
+
+
+[[nsa-hpkp-report-only]]
+* **report-only**
+Specifies if the browser should only report pin validation failures. Default true.
+
+
+[[nsa-hpkp-report-uri]]
+* **report-uri**
+Specifies the URI to which the browser should report pin validation failures.
+
+
+[[nsa-hpkp-parents]]
+===== Parent Elements of <hpkp>
+
+* <<nsa-headers,headers>>
+
+
+[[nsa-pins]]
+==== <pins>
+The list of pins
+
+
+[[nsa-pins-children]]
+===== Child Elements of <pins>
+
+* <<nsa-pin,pin>>
+
+
+[[nsa-pin]]
+==== <pin>
+A pin is specified using the base64-encoded SPKI fingerprint as value and the cryptographic hash algorithm as attribute
+
+[[nsa-pin-attributes]]
+===== <pin> Attributes
+
+[[nsa-pin-algorithm]]
+* **algorithm**
+The cryptographic hash algorithm. Default is SHA256.
+
+
+[[nsa-pin-parents]]
+===== Parent Elements of <pin>
+
+* <<nsa-pins,pins>>
+
+
+
+[[nsa-content-security-policy]]
+==== <content-security-policy>
+When enabled adds the https://www.w3.org/TR/CSP2/[Content Security Policy (CSP)] header to the response. CSP is a mechanism that web applications can leverage to mitigate content injection vulnerabilities, such as cross-site scripting (XSS).
+
+[[nsa-content-security-policy-attributes]]
+===== <content-security-policy> Attributes
+
+[[nsa-content-security-policy-policy-directives]]
+* **policy-directives**
+The security policy directive(s) for the Content-Security-Policy header or if report-only is set to true, then the Content-Security-Policy-Report-Only header is used.
+
+[[nsa-content-security-policy-report-only]]
+* **report-only**
+Set to true, to enable the Content-Security-Policy-Report-Only header for reporting policy violations only. Defaults to false.
+
+[[nsa-content-security-policy-parents]]
+===== Parent Elements of <content-security-policy>
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-referrer-policy]]
+==== <referrer-policy>
+When enabled adds the https://www.w3.org/TR/referrer-policy/[Referrer Policy] header to the response.
+
+[[nsa-referrer-policy-attributes]]
+===== <referrer-policy> Attributes
+
+[[nsa-referrer-policy-policy]]
+*  **policy**
+The policy for the Referrer-Policy header. Default "no-referrer".
+
+[[nsa-referrer-policy-parents]]
+===== Parent Elements of <referrer-policy>
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-frame-options]]
+==== <frame-options>
+When enabled adds the http://tools.ietf.org/html/draft-ietf-websec-x-frame-options[X-Frame-Options header] to the response, this allows newer browsers to do some security checks and prevent http://en.wikipedia.org/wiki/Clickjacking[clickjacking] attacks.
+
+
+[[nsa-frame-options-attributes]]
+===== <frame-options> Attributes
+
+[[nsa-frame-options-disabled]]
+* **disabled**
+If disabled, the X-Frame-Options header will not be included. Default false.
+
+[[nsa-frame-options-policy]]
+* **policy**
+** `DENY` The page cannot be displayed in a frame, regardless of the site attempting to do so. This is the default when frame-options-policy is specified.
+** `SAMEORIGIN` The page can only be displayed in a frame on the same origin as the page itself
+** `ALLOW-FROM origin` The page can only be displayed in a frame on the specified origin.
+
++
+
+In other words, if you specify DENY, not only will attempts to load the page in a frame fail when loaded from other sites, attempts to do so will fail when loaded from the same site. On the other hand, if you specify SAMEORIGIN, you can still use the page in a frame as long as the site including it in a frame it is the same as the one serving the page.
+
+[[nsa-frame-options-strategy]]
+* **strategy**
+Select the `AllowFromStrategy` to use when using the ALLOW-FROM policy.
+
+** `static` Use a single static ALLOW-FROM value. The value can be set through the <<nsa-frame-options-value,value>> attribute.
+** `regexp` Use a regelur expression to validate incoming requests and if they are allowed. The regular expression can be set through the <<nsa-frame-options-value,value>> attribute. The request parameter used to retrieve the value to validate can be specified using the <<nsa-frame-options-from-parameter,from-parameter>>.
+** `whitelist` A comma-seperated list containing the allowed domains. The comma-seperated list can be set through the <<nsa-frame-options-value,value>> attribute. The request parameter used to retrieve the value to validate can be specified using the <<nsa-frame-options-from-parameter,from-parameter>>.
+
+
+
+
+[[nsa-frame-options-ref]]
+* **ref**
+Instead of using one of the predefined strategies it is also possible to use a custom `AllowFromStrategy`. The reference to this bean can be specified through this ref attribute.
+
+
+[[nsa-frame-options-value]]
+* **value**
+The value to use when ALLOW-FROM is used a <<nsa-frame-options-strategy,strategy>>.
+
+
+[[nsa-frame-options-from-parameter]]
+* **from-parameter**
+Specify the name of the request parameter to use when using regexp or whitelist for the ALLOW-FROM strategy.
+
+
+[[nsa-frame-options-parents]]
+===== Parent Elements of <frame-options>
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-xss-protection]]
+==== <xss-protection>
+Adds the http://blogs.msdn.com/b/ie/archive/2008/07/02/ie8-security-part-iv-the-xss-filter.aspx[X-XSS-Protection header] to the response to assist in protecting against http://en.wikipedia.org/wiki/Cross-site_scripting#Non-Persistent[reflected / Type-1 Cross-Site Scripting (XSS)] attacks. This is in no-way a full protection to XSS attacks!
+
+
+[[nsa-xss-protection-attributes]]
+===== <xss-protection> Attributes
+
+
+[[nsa-xss-protection-disabled]]
+* **xss-protection-disabled**
+Do not include the header for http://en.wikipedia.org/wiki/Cross-site_scripting#Non-Persistent[reflected / Type-1 Cross-Site Scripting (XSS)] protection.
+
+
+[[nsa-xss-protection-enabled]]
+* **xss-protection-enabled**
+Explicitly enable or disable http://en.wikipedia.org/wiki/Cross-site_scripting#Non-Persistent[reflected / Type-1 Cross-Site Scripting (XSS)] protection.
+
+
+[[nsa-xss-protection-block]]
+* **xss-protection-block**
+When true and xss-protection-enabled is true, adds mode=block to the header. This indicates to the browser that the page should not be loaded at all. When false and xss-protection-enabled is true, the page will still be rendered when an reflected attack is detected but the response will be modified to protect against the attack. Note that there are sometimes ways of bypassing this mode which can often times make blocking the page more desirable.
+
+
+[[nsa-xss-protection-parents]]
+===== Parent Elements of <xss-protection>
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-content-type-options]]
+==== <content-type-options>
+Add the X-Content-Type-Options header with the value of nosniff to the response. This http://blogs.msdn.com/b/ie/archive/2008/09/02/ie8-security-part-vi-beta-2-update.aspx[disables MIME-sniffing] for IE8+ and Chrome extensions.
+
+
+[[nsa-content-type-options-attributes]]
+===== <content-type-options> Attributes
+
+[[nsa-content-type-options-disabled]]
+* **disabled**
+Specifies if Content Type Options should be disabled. Default false.
+
+[[nsa-content-type-options-parents]]
+===== Parent Elements of <content-type-options>
+
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-header]]
+==== <header>
+Add additional headers to the response, both the name and value need to be specified.
+
+
+[[nsa-header-attributes]]
+===== <header-attributes> Attributes
+
+
+[[nsa-header-name]]
+* **header-name**
+The `name` of the header.
+
+
+[[nsa-header-value]]
+* **value**
+The `value` of the header to add.
+
+
+[[nsa-header-ref]]
+* **ref**
+Reference to a custom implementation of the `HeaderWriter` interface.
+
+
+[[nsa-header-parents]]
+===== Parent Elements of <header>
+
+
+* <<nsa-headers,headers>>
+
+
+
+[[nsa-anonymous]]
+==== <anonymous>
+Adds an `AnonymousAuthenticationFilter` to the stack and an `AnonymousAuthenticationProvider`. Required if you are using the `IS_AUTHENTICATED_ANONYMOUSLY` attribute.
+
+
+[[nsa-anonymous-parents]]
+===== Parent Elements of <anonymous>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-anonymous-attributes]]
+===== <anonymous> Attributes
+
+
+[[nsa-anonymous-enabled]]
+* **enabled**
+With the default namespace setup, the anonymous "authentication" facility is automatically enabled. You can disable it using this property.
+
+
+[[nsa-anonymous-granted-authority]]
+* **granted-authority**
+The granted authority that should be assigned to the anonymous request. Commonly this is used to assign the anonymous request particular roles, which can subsequently be used in authorization decisions. If unset, defaults to `ROLE_ANONYMOUS`.
+
+
+[[nsa-anonymous-key]]
+* **key**
+The key shared between the provider and filter. This generally does not need to be set. If unset, it will default to a secure randomly generated value. This means setting this value can improve startup time when using the anonymous functionality since secure random values can take a while to be generated.
+
+
+[[nsa-anonymous-username]]
+* **username**
+The username that should be assigned to the anonymous request. This allows the principal to be identified, which may be important for logging and auditing. if unset, defaults to `anonymousUser`.
+
+
+[[nsa-csrf]]
+==== <csrf>
+This element will add http://en.wikipedia.org/wiki/Cross-site_request_forgery[Cross Site Request Forger (CSRF)] protection to the application. It also updates the default RequestCache to only replay "GET" requests upon successful authentication. Additional information can be found in the <<csrf,Cross Site Request Forgery (CSRF)>> section of the reference.
+
+
+[[nsa-csrf-parents]]
+===== Parent Elements of <csrf>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-csrf-attributes]]
+===== <csrf> Attributes
+
+[[nsa-csrf-disabled]]
+* **disabled**
+Optional attribute that specifies to disable Spring Security's CSRF protection. The default is false (CSRF protection is enabled). It is highly recommended to leave CSRF protection enabled.
+
+[[nsa-csrf-token-repository-ref]]
+* **token-repository-ref**
+The CsrfTokenRepository to use. The default is `HttpSessionCsrfTokenRepository`.
+
+
+[[nsa-csrf-request-matcher-ref]]
+* **request-matcher-ref**
+The RequestMatcher instance to be used to determine if CSRF should be applied. Default is any HTTP method except "GET", "TRACE", "HEAD", "OPTIONS".
+
+
+[[nsa-custom-filter]]
+==== <custom-filter>
+This element is used to add a filter to the filter chain. It doesn't create any additional beans but is used to select a bean of type `javax.servlet.Filter` which is already defined in the application context and add that at a particular position in the filter chain maintained by Spring Security. Full details can be found in the <<ns-custom-filters, namespace chapter>>.
+
+
+[[nsa-custom-filter-parents]]
+===== Parent Elements of <custom-filter>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-custom-filter-attributes]]
+===== <custom-filter> Attributes
+
+
+[[nsa-custom-filter-after]]
+* **after**
+The filter immediately after which the custom-filter should be placed in the chain. This feature will only be needed by advanced users who wish to mix their own filters into the security filter chain and have some knowledge of the standard Spring Security filters. The filter names map to specific Spring Security implementation filters.
+
+
+[[nsa-custom-filter-before]]
+* **before**
+The filter immediately before which the custom-filter should be placed in the chain
+
+
+[[nsa-custom-filter-position]]
+* **position**
+The explicit position at which the custom-filter should be placed in the chain. Use if you are replacing a standard filter.
+
+
+[[nsa-custom-filter-ref]]
+* **ref**
+Defines a reference to a Spring bean that implements `Filter`.
+
+
+[[nsa-expression-handler]]
+==== <expression-handler>
+Defines the `SecurityExpressionHandler` instance which will be used if expression-based access-control is enabled. A default implementation (with no ACL support) will be used if not supplied.
+
+
+[[nsa-expression-handler-parents]]
+===== Parent Elements of <expression-handler>
+
+
+* <<nsa-global-method-security,global-method-security>>
+* <<nsa-http,http>>
+* <<nsa-websocket-message-broker,websocket-message-broker>>
+
+
+
+[[nsa-expression-handler-attributes]]
+===== <expression-handler> Attributes
+
+
+[[nsa-expression-handler-ref]]
+* **ref**
+Defines a reference to a Spring bean that implements `SecurityExpressionHandler`.
+
+
+[[nsa-form-login]]
+==== <form-login>
+用于向 filter 堆栈添加 `UsernamePasswordAuthenticationFilter`，并向应用程序上下文添加 `LoginUrlAuthenticationEntryPoint`，以根据需要提供认证。这将始终优先于命名空间创建的其他入口点。如果没有提供属性，将在 URL "/login" 处自动生成登录页面 footnote:[这个功能只是为了方便而提供，并不是用于生产环境（这里可以选择一种视图技术并且可以用于渲染定制的登录页面）。`DefaultLoginPageGeneratingFilter ` 类负责渲染登录页面，并且将提供正常的表单登录和/或 OpenID（如果需要）的登录页面。] 可以使用 <<nsa-form-login-attributes, `<form-login>` 属性>> 来自定义行为。
+
+
+[[nsa-form-login-parents]]
+===== <form-login> 的父元素
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-form-login-attributes]]
+===== <form-login> 属性
+
+
+[[nsa-form-login-always-use-default-target]]
+* **always-use-default-target**
+If set to `true`, the user will always start at the value given by <<nsa-form-login-default-target-url,default-target-url>>, regardless of how they arrived at the login page. Maps to the `alwaysUseDefaultTargetUrl` property of `UsernamePasswordAuthenticationFilter`. Default value is `false`.
+
+
+[[nsa-form-login-authentication-details-source-ref]]
+* **authentication-details-source-ref**
+Reference to an `AuthenticationDetailsSource` which will be used by the authentication filter
+
+
+[[nsa-form-login-authentication-failure-handler-ref]]
+* **authentication-failure-handler-ref**
+Can be used as an alternative to <<nsa-form-login-authentication-failure-url,authentication-failure-url>>, giving you full control over the navigation flow after an authentication failure. The value should be he name of an `AuthenticationFailureHandler` bean in the application context.
+
+
+[[nsa-form-login-authentication-failure-url]]
+* **authentication-failure-url**
+Maps to the `authenticationFailureUrl` property of `UsernamePasswordAuthenticationFilter`. Defines the URL the browser will be redirected to on login failure. Defaults to `/login?error`, which will be automatically handled by the automatic login page generator, re-rendering the login page with an error message.
+
+
+[[nsa-form-login-authentication-success-handler-ref]]
+* **authentication-success-handler-ref**
+This can be used as an alternative to <<nsa-form-login-default-target-url,default-target-url>> and <<nsa-form-login-always-use-default-target,always-use-default-target>>, giving you full control over the navigation flow after a successful authentication. The value should be the name of an `AuthenticationSuccessHandler` bean in the application context. By default, an implementation of `SavedRequestAwareAuthenticationSuccessHandler` is used and injected with the <<nsa-form-login-default-target-url,default-target-url >>.
+
+
+[[nsa-form-login-default-target-url]]
+* **default-target-url**
+Maps to the `defaultTargetUrl` property of `UsernamePasswordAuthenticationFilter`. If not set, the default value is "/" (the application root). A user will be taken to this URL after logging in, provided they were not asked to login while attempting to access a secured resource, when they will be taken to the originally requested URL.
+
+
+[[nsa-form-login-login-page]]
+* **login-page**
+用于渲染登录页面的 URL。映射到 `LoginUrlAuthenticationEntryPoint` 的 `loginFormUrl` 属性。默认为 "/login"。
+
+
+[[nsa-form-login-login-processing-url]]
+* **login-processing-url**
+Maps to the `filterProcessesUrl` property of `UsernamePasswordAuthenticationFilter`. The default value is "/login".
+
+
+[[nsa-form-login-password-parameter]]
+* **password-parameter**
+The name of the request parameter which contains the password. Defaults to "password".
+
+
+[[nsa-form-login-username-parameter]]
+* **username-parameter**
+The name of the request parameter which contains the username. Defaults to "username".
+
+[[nsa-form-login-authentication-success-forward-url]]
+* **authentication-success-forward-url**
+Maps a `ForwardAuthenticationSuccessHandler` to `authenticationSuccessHandler` property of `UsernamePasswordAuthenticationFilter`.
+
+
+[[nsa-form-login-authentication-failure-forward-url]]
+* **authentication-failure-forward-url**
+Maps a `ForwardAuthenticationFailureHandler` to `authenticationFailureHandler` property of `UsernamePasswordAuthenticationFilter`.
+
+[[nsa-http-basic]]
+==== <http-basic>
+Adds a `BasicAuthenticationFilter` and `BasicAuthenticationEntryPoint` to the configuration. The latter will only be used as the configuration entry point if form-based login is not enabled.
+
+
+[[nsa-http-basic-parents]]
+===== Parent Elements of <http-basic>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-http-basic-attributes]]
+===== <http-basic> Attributes
+
+
+[[nsa-http-basic-authentication-details-source-ref]]
+* **authentication-details-source-ref**
+Reference to an `AuthenticationDetailsSource` which will be used by the authentication filter
+
+
+[[nsa-http-basic-entry-point-ref]]
+* **entry-point-ref**
+Sets the `AuthenticationEntryPoint` which is used by the `BasicAuthenticationFilter`.
+
+
+[[nsa-http-firewall]]
+==== <http-firewall> Element
+This is a top-level element which can be used to inject a custom implementation of `HttpFirewall` into the `FilterChainProxy` created by the namespace. The default implementation should be suitable for most applications.
+
+
+[[nsa-http-firewall-attributes]]
+===== <http-firewall> Attributes
+
+
+[[nsa-http-firewall-ref]]
+* **ref**
+Defines a reference to a Spring bean that implements `HttpFirewall`.
+
+
+[[nsa-intercept-url]]
+==== <intercept-url>
+此元素用于定义应用程序感兴趣的 URL pattern 集，并配置如何处理它们。它用于构造 `FilterSecurityInterceptor` 所使用的 `FilterInvocationSecurityMetadataSource`。它还负责配置 `ChannelProcessingFilter`，例如，如果特定的 URL 需要通过 HTTPS 访问。当传入请求匹配指定的 pattern 时，将按声明元素的顺序进行匹配。所以最具体的 pattern 应该放在最前面，最一般的应该放在最后。
+
+
+[[nsa-intercept-url-parents]]
+===== <intercept-url> 的父元素
+
+
+* <<nsa-filter-security-metadata-source,filter-security-metadata-source>>
+* <<nsa-http,http>>
+
+
+
+[[nsa-intercept-url-attributes]]
+===== <intercept-url> 属性
+
+
+[[nsa-intercept-url-access]]
+* **access**
+列出访问属性，这些访问属性将存储在定义的 URL pattern/method 组合的 `FilterInvocationSecurityMetadataSource` 中。这应该是以逗号分隔的安全配置属性（例如角色名称）的列表。
+
+
+[[nsa-intercept-url-filters]]
+* **filters**
+Can only take the value "none". This will cause any matching request to bypass the Spring Security filter chain entirely. None of the rest of the `<http>` configuration will have any effect on the request and there will be no security context available for its duration. Access to secured methods during the request will fail.
+
+NOTE: This property is invalid for <<nsa-filter-security-metadata-source,filter-security-metadata-source>>
+
+[[nsa-intercept-url-method]]
+* **method**
+The HTTP Method which will be used in combination with the pattern and servlet path (optional) to match an incoming request. If omitted, any method will match. If an identical pattern is specified with and without a method, the method-specific match will take precedence.
+
+
+[[nsa-intercept-url-pattern]]
+* **pattern**
+定义 URL 路径的模式。其内容将取决于包含 http 元素的 `request-matcher` 属性，因此默认为 ant 路径语法。
+
+
+[[nsa-intercept-url-request-matcher-ref]]
+* **request-matcher-ref**
+A reference to a `RequestMatcher` that will be used to determine if this `<intercept-url>` is used.
+
+
+[[nsa-intercept-url-requires-channel]]
+* **requires-channel**
+Can be "http" or "https" depending on whether a particular URL pattern should be accessed over HTTP or HTTPS respectively. Alternatively the value "any" can be used when there is no preference. If this attribute is present on any `<intercept-url>` element, then a `ChannelProcessingFilter` will be added to the filter stack and its additional dependencies added to the application context.
+
+If a `<port-mappings>` configuration is added, this will be used to by the `SecureChannelProcessor` and `InsecureChannelProcessor` beans to determine the ports used for redirecting to HTTP/HTTPS.
+
+NOTE: This property is invalid for <<nsa-filter-security-metadata-source,filter-security-metadata-source>>
+
+[[nsa-intercept-url-servlet-path]]
+* **servlet-path**
+The servlet path which will be used in combination with the pattern and HTTP method to match an incoming request. This attribute is only applicable when <<nsa-http-request-matcher,request-matcher>> is 'mvc'. In addition, the value is only required in the following 2 use cases: 1) There are 2 or more `HttpServlet` 's registered in the `ServletContext` that have mappings starting with `'/'` and are different;  2) The pattern starts with the same value of a registered `HttpServlet` path, excluding the default (root) `HttpServlet` `'/'`.
+
+NOTE: This property is invalid for <<nsa-filter-security-metadata-source,filter-security-metadata-source>>
+
+
+[[nsa-jee]]
+==== <jee>
+Adds a J2eePreAuthenticatedProcessingFilter to the filter chain to provide integration with container authentication.
+
+
+[[nsa-jee-parents]]
+===== Parent Elements of <jee>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-jee-attributes]]
+===== <jee> Attributes
+
+
+[[nsa-jee-mappable-roles]]
+* **mappable-roles**
+A comma-separate list of roles to look for in the incoming HttpServletRequest.
+
+
+[[nsa-jee-user-service-ref]]
+* **user-service-ref**
+A reference to a user-service (or UserDetailsService bean) Id
+
+
+[[nsa-logout]]
+==== <logout>
+将 `LogoutFilter` 添加到 filter 堆栈。这是使用 `SecurityContextLogoutHandler` 配置的。
+
+
+[[nsa-logout-parents]]
+===== <logout> 的父元素
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-logout-attributes]]
+===== <logout> 属性
+
+
+[[nsa-logout-delete-cookies]]
+* **delete-cookies**
+以逗号分隔的 Cookie 名称列表，在用户退出时会删除它。
+
+
+[[nsa-logout-invalidate-session]]
+* **invalidate-session**
+Maps to the `invalidateHttpSession` of the `SecurityContextLogoutHandler`. Defaults to "true", so the session will be invalidated on logout.
+
+
+[[nsa-logout-logout-success-url]]
+* **logout-success-url**
+退出后用户将转到的目标 URL。默认为 <form-login-login-page>/?logout（即 /login?logout）
+
++
+
+设置此属性将向 `SessionManagementFilter` 注入使用属性值配置的 `SimpleRedirectInvalidSessionStrategy`。当提交无效的会话 ID 时，将调用策略，重定向到已配置的 URL。
+
+
+[[nsa-logout-logout-url]]
+* **logout-url**
+将导致退出（即将由 filter 处理）的 URL。默认为 "/logout"。
+
+
+[[nsa-logout-success-handler-ref]]
+* **success-handler-ref**
+May be used to supply an instance of `LogoutSuccessHandler` which will be invoked to control the navigation after logging out.
+
+
+[[nsa-openid-login]]
+==== <openid-login>
+Similar to `<form-login>` and has the same attributes. The default value for `login-processing-url` is "/login/openid". An `OpenIDAuthenticationFilter` and `OpenIDAuthenticationProvider` will be registered. The latter requires a reference to a `UserDetailsService`. Again, this can be specified by `id`, using the `user-service-ref` attribute, or will be located automatically in the application context.
+
+
+[[nsa-openid-login-parents]]
+===== Parent Elements of <openid-login>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-openid-login-attributes]]
+===== <openid-login> Attributes
+
+
+[[nsa-openid-login-always-use-default-target]]
+* **always-use-default-target**
+Whether the user should always be redirected to the default-target-url after login.
+
+
+[[nsa-openid-login-authentication-details-source-ref]]
+* **authentication-details-source-ref**
+Reference to an AuthenticationDetailsSource which will be used by the authentication filter
+
+
+[[nsa-openid-login-authentication-failure-handler-ref]]
+* **authentication-failure-handler-ref**
+Reference to an AuthenticationFailureHandler bean which should be used to handle a failed authentication request. Should not be used in combination with authentication-failure-url as the implementation should always deal with navigation to the subsequent destination
+
+
+[[nsa-openid-login-authentication-failure-url]]
+* **authentication-failure-url**
+The URL for the login failure page. If no login failure URL is specified, Spring Security will automatically create a failure login URL at /login?login_error and a corresponding filter to render that login failure URL when requested.
+
+
+[[nsa-openid-login-authentication-success-forward-url]]
+* **authentication-success-forward-url**
+Maps a `ForwardAuthenticationSuccessHandler` to `authenticationSuccessHandler` property of `UsernamePasswordAuthenticationFilter`.
+
+
+[[nsa-openid-login-authentication-failure-forward-url]]
+* **authentication-failure-forward-url**
+Maps a `ForwardAuthenticationFailureHandler` to `authenticationFailureHandler` property of `UsernamePasswordAuthenticationFilter`.
+
+
+[[nsa-openid-login-authentication-success-handler-ref]]
+* **authentication-success-handler-ref**
+Reference to an AuthenticationSuccessHandler bean which should be used to handle a successful authentication request. Should not be used in combination with <<nsa-openid-login-default-target-url,default-target-url>> (or <<nsa-openid-login-always-use-default-target, always-use-default-target>>) as the implementation should always deal with navigation to the subsequent destination
+
+
+[[nsa-openid-login-default-target-url]]
+* **default-target-url**
+The URL that will be redirected to after successful authentication, if the user's previous action could not be resumed. This generally happens if the user visits a login page without having first requested a secured operation that triggers authentication. If unspecified, defaults to the root of the application.
+
+
+[[nsa-openid-login-login-page]]
+* **login-page**
+The URL for the login page. If no login URL is specified, Spring Security will automatically create a login URL at /login and a corresponding filter to render that login URL when requested.
+
+
+[[nsa-openid-login-login-processing-url]]
+* **login-processing-url**
+The URL that the login form is posted to. If unspecified, it defaults to /login.
+
+
+[[nsa-openid-login-password-parameter]]
+* **password-parameter**
+The name of the request parameter which contains the password. Defaults to "password".
+
+
+[[nsa-openid-login-user-service-ref]]
+* **user-service-ref**
+A reference to a user-service (or UserDetailsService bean) Id
+
+
+[[nsa-openid-login-username-parameter]]
+* **username-parameter**
+The name of the request parameter which contains the username. Defaults to "username".
+
+
+[[nsa-openid-login-children]]
+===== Child Elements of <openid-login>
+* <<nsa-attribute-exchange,attribute-exchange>>
+
+
+
+[[nsa-attribute-exchange]]
+==== <attribute-exchange>
+The `attribute-exchange` element defines the list of attributes which should be requested from the identity provider. An example can be found in the <<ns-openid,OpenID Support>> section of the namespace configuration chapter. More than one can be used, in which case each must have an `identifier-match` attribute, containing a regular expression which is matched against the supplied OpenID identifier. This allows different attribute lists to be fetched from different providers (Google, Yahoo etc).
+
+
+[[nsa-attribute-exchange-parents]]
+===== Parent Elements of <attribute-exchange>
+
+
+* <<nsa-openid-login,openid-login>>
+
+
+
+[[nsa-attribute-exchange-attributes]]
+===== <attribute-exchange> Attributes
+
+
+[[nsa-attribute-exchange-identifier-match]]
+* **identifier-match**
+A regular expression which will be compared against the claimed identity, when deciding which attribute-exchange configuration to use during authentication.
+
+
+[[nsa-attribute-exchange-children]]
+===== Child Elements of <attribute-exchange>
+
+
+* <<nsa-openid-attribute,openid-attribute>>
+
+
+
+[[nsa-openid-attribute]]
+==== <openid-attribute>
+Attributes used when making an OpenID AX http://openid.net/specs/openid-attribute-exchange-1_0.html#fetch_request[ Fetch Request]
+
+
+[[nsa-openid-attribute-parents]]
+===== Parent Elements of <openid-attribute>
+
+
+* <<nsa-attribute-exchange,attribute-exchange>>
+
+
+
+[[nsa-openid-attribute-attributes]]
+===== <openid-attribute> Attributes
+
+
+[[nsa-openid-attribute-count]]
+* **count**
+Specifies the number of attributes that you wish to get back. For example, return 3 emails. The default value is 1.
+
+
+[[nsa-openid-attribute-name]]
+* **name**
+Specifies the name of the attribute that you wish to get back. For example, email.
+
+
+[[nsa-openid-attribute-required]]
+* **required**
+Specifies if this attribute is required to the OP, but does not error out if the OP does not return the attribute. Default is false.
+
+
+[[nsa-openid-attribute-type]]
+* **type**
+Specifies the attribute type. For example, http://axschema.org/contact/email. See your OP's documentation for valid attribute types.
+
+
+[[nsa-port-mappings]]
+==== <port-mappings>
+By default, an instance of `PortMapperImpl` will be added to the configuration for use in redirecting to secure and insecure URLs. This element can optionally be used to override the default mappings which that class defines. Each child `<port-mapping>` element defines a pair of HTTP:HTTPS ports. The default mappings are 80:443 and 8080:8443. An example of overriding these can be found in the <<ns-requires-channel,namespace introduction>>.
+
+
+[[nsa-port-mappings-parents]]
+===== Parent Elements of <port-mappings>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-port-mappings-children]]
+===== Child Elements of <port-mappings>
+
+
+* <<nsa-port-mapping,port-mapping>>
+
+
+
+[[nsa-port-mapping]]
+==== <port-mapping>
+Provides a method to map http ports to https ports when forcing a redirect.
+
+
+[[nsa-port-mapping-parents]]
+===== Parent Elements of <port-mapping>
+
+
+* <<nsa-port-mappings,port-mappings>>
+
+
+
+[[nsa-port-mapping-attributes]]
+===== <port-mapping> Attributes
+
+
+[[nsa-port-mapping-http]]
+* **http**
+The http port to use.
+
+
+[[nsa-port-mapping-https]]
+* **https**
+The https port to use.
+
+
+[[nsa-remember-me]]
+==== <remember-me>
+将 `RememberMeAuthenticationFilter` 添加到堆栈。根据属性设置，这反过来将配置 `TokenBasedRememberMeServices`、`PersistentTokenBasedRememberMeServices` 或用户指定的 `RememberMeServices` bean 实现。
+
+
+[[nsa-remember-me-parents]]
+===== <remember-me> 的父元素
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-remember-me-attributes]]
+===== <remember-me> 属性
+
+
+[[nsa-remember-me-authentication-success-handler-ref]]
+* **authentication-success-handler-ref**
+Sets the `authenticationSuccessHandler` property on the `RememberMeAuthenticationFilter` if custom navigation is required. The value should be the name of a `AuthenticationSuccessHandler` bean in the application context.
+
+
+[[nsa-remember-me-data-source-ref]]
+* **data-source-ref**
+A reference to a `DataSource` bean. If this is set, `PersistentTokenBasedRememberMeServices` will be used and configured with a `JdbcTokenRepositoryImpl` instance.
+
+
+[[nsa-remember-me-remember-me-parameter]]
+* **remember-me-parameter**
+The name of the request parameter which toggles remember-me authentication. Defaults to "remember-me". Maps to the "parameter" property of `AbstractRememberMeServices`.
+
+
+[[nsa-remember-me-remember-me-cookie]]
+* **remember-me-cookie**
+The name of cookie which store the token for remember-me authentication. Defaults to "remember-me". Maps to the "cookieName" property of `AbstractRememberMeServices`.
+
+
+[[nsa-remember-me-key]]
+* **key**
+映射到 `AbstractRememberMeServices` 的 "key" 属性。应该设置为唯一的值，以确保 remember-me cookie 仅在一个应用程序内有效 footnote:[这不会影响 `PersistentTokenBasedRememberMeServices` 的使用，其中 token 存储在服务器端。]。 如果未设置，将生成一个安全的随机值。由于生成安全的随机值可能需要一段时间，在使用 remember me 功能时明确设置此值有助于提高启动时间。
+
+
+[[nsa-remember-me-services-alias]]
+* **services-alias**
+Exports the internally defined `RememberMeServices` as a bean alias, allowing it to be used by other beans in the application context.
+
+
+[[nsa-remember-me-services-ref]]
+* **services-ref**
+Allows complete control of the `RememberMeServices` implementation that will be used by the filter. The value should be the `id` of a bean in the application context which implements this interface. Should also implement `LogoutHandler` if a logout filter is in use.
+
+
+[[nsa-remember-me-token-repository-ref]]
+* **token-repository-ref**
+Configures a `PersistentTokenBasedRememberMeServices` but allows the use of a custom `PersistentTokenRepository` bean.
+
+
+[[nsa-remember-me-token-validity-seconds]]
+* **token-validity-seconds**
+Maps to the `tokenValiditySeconds` property of `AbstractRememberMeServices`. Specifies the period in seconds for which the remember-me cookie should be valid. By default it will be valid for 14 days.
+
+
+[[nsa-remember-me-use-secure-cookie]]
+* **use-secure-cookie**
+It is recommended that remember-me cookies are only submitted over HTTPS and thus should be flagged as "secure". By default, a secure cookie will be used if the connection over which the login request is made is secure (as it should be). If you set this property to `false`, secure cookies will not be used. Setting it to `true` will always set the secure flag on the cookie. This attribute maps to the `useSecureCookie` property of `AbstractRememberMeServices`.
+
+
+[[nsa-remember-me-user-service-ref]]
+* **user-service-ref**
+The remember-me services implementations require access to a `UserDetailsService`, so there has to be one defined in the application context. If there is only one, it will be selected and used automatically by the namespace configuration. If there are multiple instances, you can specify a bean `id` explicitly using this attribute.
+
+
+[[nsa-request-cache]]
+==== <request-cache> Element
+Sets the `RequestCache` instance which will be used by the `ExceptionTranslationFilter` to store request information before invoking an `AuthenticationEntryPoint`.
+
+
+[[nsa-request-cache-parents]]
+===== Parent Elements of <request-cache>
+
+* <<nsa-http,http>>
+
+[[nsa-request-cache-attributes]]
+===== <request-cache> Attributes
+
+
+[[nsa-request-cache-ref]]
+* **ref**
+Defines a reference to a Spring bean that is a `RequestCache`.
+
+
+[[nsa-session-management]]
+==== <session-management>
+Session-management related functionality is implemented by the addition of a `SessionManagementFilter` to the filter stack.
+
+
+[[nsa-session-management-parents]]
+===== Parent Elements of <session-management>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-session-management-attributes]]
+===== <session-management> Attributes
+
+
+[[nsa-session-management-invalid-session-url]]
+* **invalid-session-url**
+Setting this attribute will inject the `SessionManagementFilter` with a `SimpleRedirectInvalidSessionStrategy` configured with the attribute value. When an invalid session ID is submitted, the strategy will be invoked, redirecting to the configured URL.
+
+[[nsa-session-management-invalid-session-strategy-ref]]
+* **invalid-session-url**
+Allows injection of the InvalidSessionStrategy instance used by the SessionManagementFilter. Use either this or the `invalid-session-url` attribute but not both.
+
+[[nsa-session-management-session-authentication-error-url]]
+* **session-authentication-error-url**
+Defines the URL of the error page which should be shown when the SessionAuthenticationStrategy raises an exception. If not set, an unauthorized (401) error code will be returned to the client. Note that this attribute doesn't apply if the error occurs during a form-based login, where the URL for authentication failure will take precedence.
+
+
+[[nsa-session-management-session-authentication-strategy-ref]]
+* **session-authentication-strategy-ref**
+Allows injection of the SessionAuthenticationStrategy instance used by the SessionManagementFilter
+
+
+[[nsa-session-management-session-fixation-protection]]
+* **session-fixation-protection**
+Indicates how session fixation protection will be applied when a user authenticates. If set to "none", no protection will be applied. "newSession" will create a new empty session, with only Spring Security-related attributes migrated. "migrateSession" will create a new session and copy all session attributes to the new session. In Servlet 3.1 (Java EE 7) and newer containers, specifying "changeSessionId" will keep the existing session and use the container-supplied session fixation protection (HttpServletRequest#changeSessionId()). Defaults to "changeSessionId" in Servlet 3.1 and newer containers, "migrateSession" in older containers. Throws an exception if "changeSessionId" is used in older containers.
+
++
+
+If session fixation protection is enabled, the `SessionManagementFilter` is injected with an appropriately configured `DefaultSessionAuthenticationStrategy`. See the Javadoc for this class for more details.
+
+
+[[nsa-session-management-children]]
+===== Child Elements of <session-management>
+
+
+* <<nsa-concurrency-control,concurrency-control>>
+
+
+
+[[nsa-concurrency-control]]
+==== <concurrency-control>
+Adds support for concurrent session control, allowing limits to be placed on the number of active sessions a user can have. A `ConcurrentSessionFilter` will be created, and a `ConcurrentSessionControlAuthenticationStrategy` will be used with the `SessionManagementFilter`. If a `form-login` element has been declared, the strategy object will also be injected into the created authentication filter. An instance of `SessionRegistry` (a `SessionRegistryImpl` instance unless the user wishes to use a custom bean) will be created for use by the strategy.
+
+
+[[nsa-concurrency-control-parents]]
+===== Parent Elements of <concurrency-control>
+
+
+* <<nsa-session-management,session-management>>
+
+
+
+[[nsa-concurrency-control-attributes]]
+===== <concurrency-control> Attributes
+
+
+[[nsa-concurrency-control-error-if-maximum-exceeded]]
+* **error-if-maximum-exceeded**
+If set to "true" a `SessionAuthenticationException` will be raised when a user attempts to exceed the maximum allowed number of sessions. The default behaviour is to expire the original session.
+
+
+[[nsa-concurrency-control-expired-url]]
+* **expired-url**
+The URL a user will be redirected to if they attempt to use a session which has been "expired" by the concurrent session controller because the user has exceeded the number of allowed sessions and has logged in again elsewhere. Should be set unless `exception-if-maximum-exceeded` is set. If no value is supplied, an expiry message will just be written directly back to the response.
+
+[[nsa-concurrency-control-expired-session-strategy-ref]]
+* **expired-url**
+Allows injection of the ExpiredSessionStrategy instance used by the ConcurrentSessionFilter
+
+[[nsa-concurrency-control-max-sessions]]
+* **max-sessions**
+Maps to the `maximumSessions` property of `ConcurrentSessionControlAuthenticationStrategy`.
+Specify `-1` as the value to support unlimited sessions.
+
+
+[[nsa-concurrency-control-session-registry-alias]]
+* **session-registry-alias**
+It can also be useful to have a reference to the internal session registry for use in your own beans or an admin interface. You can expose the internal bean using the `session-registry-alias` attribute, giving it a name that you can use elsewhere in your configuration.
+
+
+[[nsa-concurrency-control-session-registry-ref]]
+* **session-registry-ref**
+The user can supply their own `SessionRegistry` implementation using the `session-registry-ref` attribute. The other concurrent session control beans will be wired up to use it.
+
+
+[[nsa-x509]]
+==== <x509>
+Adds support for X.509 authentication. An `X509AuthenticationFilter` will be added to the stack and an `Http403ForbiddenEntryPoint` bean will be created. The latter will only be used if no other authentication mechanisms are in use (its only functionality is to return an HTTP 403 error code). A `PreAuthenticatedAuthenticationProvider` will also be created which delegates the loading of user authorities to a `UserDetailsService`.
+
+
+[[nsa-x509-parents]]
+===== Parent Elements of <x509>
+
+
+* <<nsa-http,http>>
+
+
+
+[[nsa-x509-attributes]]
+===== <x509> Attributes
+
+
+[[nsa-x509-authentication-details-source-ref]]
+* **authentication-details-source-ref**
+A reference to an `AuthenticationDetailsSource`
+
+
+[[nsa-x509-subject-principal-regex]]
+* **subject-principal-regex**
+Defines a regular expression which will be used to extract the username from the certificate (for use with the `UserDetailsService`).
+
+
+[[nsa-x509-user-service-ref]]
+* **user-service-ref**
+Allows a specific `UserDetailsService` to be used with X.509 in the case where multiple instances are configured. If not set, an attempt will be made to locate a suitable instance automatically and use that.
+
+
+[[nsa-filter-chain-map]]
+==== <filter-chain-map>
+Used to explicitly configure a FilterChainProxy instance with a FilterChainMap
+
+
+[[nsa-filter-chain-map-attributes]]
+===== <filter-chain-map> Attributes
+
+
+[[nsa-filter-chain-map-request-matcher]]
+* **request-matcher**
+Defines the strategy to use for matching incoming requests. Currently the options are 'ant' (for ant path patterns), 'regex' for regular expressions and 'ciRegex' for case-insensitive regular expressions.
+
+
+[[nsa-filter-chain-map-children]]
+===== Child Elements of <filter-chain-map>
+
+
+* <<nsa-filter-chain,filter-chain>>
+
+
+
+[[nsa-filter-chain]]
+==== <filter-chain>
+Used within to define a specific URL pattern and the list of filters which apply to the URLs matching that pattern. When multiple filter-chain elements are assembled in a list in order to configure a FilterChainProxy, the most specific patterns must be placed at the top of the list, with most general ones at the bottom.
+
+
+[[nsa-filter-chain-parents]]
+===== Parent Elements of <filter-chain>
+
+
+* <<nsa-filter-chain-map,filter-chain-map>>
+
+
+
+[[nsa-filter-chain-attributes]]
+===== <filter-chain> Attributes
+
+
+[[nsa-filter-chain-filters]]
+* **filters**
+A comma separated list of references to Spring beans that implement `Filter`. The value "none" means that no `Filter` should be used for this `FilterChain`.
+
+
+[[nsa-filter-chain-pattern]]
+* **pattern**
+A pattern that creates RequestMatcher in combination with the <<nsa-filter-chain-map-request-matcher,request-matcher>>
+
+
+[[nsa-filter-chain-request-matcher-ref]]
+* **request-matcher-ref**
+A reference to a `RequestMatcher` that will be used to determine if any `Filter` from the `filters` attribute should be invoked.
+
+
+[[nsa-filter-security-metadata-source]]
+==== <filter-security-metadata-source>
+Used to explicitly configure a FilterSecurityMetadataSource bean for use with a FilterSecurityInterceptor. Usually only needed if you are configuring a FilterChainProxy explicitly, rather than using the<http> element. The intercept-url elements used should only contain pattern, method and access attributes. Any others will result in a configuration error.
+
+
+[[nsa-filter-security-metadata-source-attributes]]
+===== <filter-security-metadata-source> Attributes
+
+
+[[nsa-filter-security-metadata-source-id]]
+* **id**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-filter-security-metadata-source-request-matcher]]
+* **request-matcher**
+Defines the strategy use for matching incoming requests. Currently the options are 'ant' (for ant path patterns), 'regex' for regular expressions and 'ciRegex' for case-insensitive regular expressions.
+
+
+[[nsa-filter-security-metadata-source-use-expressions]]
+* **use-expressions**
+Enables the use of expressions in the 'access' attributes in <intercept-url> elements rather than the traditional list of configuration attributes. Defaults to 'true'. If enabled, each attribute should contain a single Boolean expression. If the expression evaluates to 'true', access will be granted.
+
+
+[[nsa-filter-security-metadata-source-children]]
+===== Child Elements of <filter-security-metadata-source>
+
+
+* <<nsa-intercept-url,intercept-url>>
+
+[[nsa-websocket-security]]
+=== WebSocket Security
+
+Spring Security 4.0+ provides support for authorizing messages. One concrete example of where this is useful is to provide authorization in WebSocket based applications.
+
+[[nsa-websocket-message-broker]]
+==== <websocket-message-broker>
+
+The websocket-message-broker element has two different modes.
+If the <<nsa-websocket-message-broker-id,websocket-message-broker@id>> is not specified, then it will do the following things:
+
+* Ensure that any SimpAnnotationMethodMessageHandler has the AuthenticationPrincipalArgumentResolver registered as a custom argument resolver. This allows the use of `@AuthenticationPrincipal` to resolve the principal of the current `Authentication`
+* Ensures that the SecurityContextChannelInterceptor is automatically registered for the clientInboundChannel. This populates the SecurityContextHolder with the user that is found in the Message
+* Ensures that a ChannelSecurityInterceptor is registered with the clientInboundChannel. This allows authorization rules to be specified for a message.
+* Ensures that a CsrfChannelInterceptor is registered with the clientInboundChannel. This ensures that only requests from the original domain are enabled.
+* Ensures that a CsrfTokenHandshakeInterceptor is registered with WebSocketHttpRequestHandler, TransportHandlingSockJsService, or DefaultSockJsService. This ensures that the expected CsrfToken from the HttpServletRequest is copied into the WebSocket Session attributes.
+
+If additional control is necessary, the id can be specified and a ChannelSecurityInterceptor will be assigned to the specified id. All the wiring with Spring's messaging infrastructure can then be done manually. This is more cumbersome, but provides greater control over the configuration.
+
+
+[[nsa-websocket-message-broker-attributes]]
+===== <websocket-message-broker> Attributes
+
+[[nsa-websocket-message-broker-id]]
+* **id** A bean identifier, used for referring to the ChannelSecurityInterceptor bean elsewhere in the context. If specified, Spring Security requires explicit configuration within Spring Messaging. If not specified, Spring Security will automatically integrate with the messaging infrastructure as described in <<nsa-websocket-message-broker>>
+
+[[nsa-websocket-message-broker-same-origin-disabled]]
+* **same-origin-disabled** Disables the requirement for CSRF token to be present in the Stomp headers (default false). Changing the default is useful if it is necessary to allow other origins to make SockJS connections.
+
+[[nsa-websocket-message-broker-children]]
+===== Child Elements of <websocket-message-broker>
+
+
+* <<nsa-expression-handler,expression-handler>>
+* <<nsa-intercept-message,intercept-message>>
+
+[[nsa-intercept-message]]
+==== <intercept-message>
+
+Defines an authorization rule for a message.
+
+
+[[nsa-intercept-message-parents]]
+===== Parent Elements of <intercept-message>
+
+
+* <<nsa-websocket-message-broker,websocket-message-broker>>
+
+
+[[nsa-intercept-message-attributes]]
+===== <intercept-message> Attributes
+
+[[nsa-intercept-message-pattern]]
+* **pattern** An ant based pattern that matches on the Message destination. For example, "/**" matches any Message with a destination; "/admin/**" matches any Message that has a destination that starts with "/admin/**".
+
+[[nsa-intercept-message-type]]
+* **type** The type of message to match on.
+Valid values are defined in SimpMessageType (i.e. CONNECT, CONNECT_ACK, HEARTBEAT, MESSAGE, SUBSCRIBE, UNSUBSCRIBE, DISCONNECT, DISCONNECT_ACK, OTHER).
+
+[[nsa-intercept-message-access]]
+* **access** The expression used to secure the Message. For example, "denyAll" will deny access to all of the matching Messages; "permitAll" will grant access to all of the matching Messages; "hasRole('ADMIN') requires the current user to have the role 'ROLE_ADMIN' for the matching Messages.
+
+[[nsa-authentication]]
+=== Authentication Services
+Before Spring Security 3.0, an `AuthenticationManager` was automatically registered internally. Now you must register one explicitly using the `<authentication-manager>` element. This creates an instance of Spring Security's `ProviderManager` class, which needs to be configured with a list of one or more `AuthenticationProvider` instances. These can either be created using syntax elements provided by the namespace, or they can be standard bean definitions, marked for addition to the list using the `authentication-provider` element.
+
+
+[[nsa-authentication-manager]]
+==== <authentication-manager>
+Every Spring Security application which uses the namespace must have include this element somewhere. It is responsible for registering the `AuthenticationManager` which provides authentication services to the application. All elements which create `AuthenticationProvider` instances should be children of this element.
+
+
+[[nsa-authentication-manager-attributes]]
+===== <authentication-manager> Attributes
+
+
+[[nsa-authentication-manager-alias]]
+* **alias**
+This attribute allows you to define an alias name for the internal instance for use in your own configuration. Its use is described in the<<ns-auth-manager,namespace introduction>>.
+
+
+[[nsa-authentication-manager-erase-credentials]]
+* **erase-credentials**
+If set to true, the AuthenticationManager will attempt to clear any credentials data in the returned Authentication object, once the user has been authenticated. Literally it maps to the `eraseCredentialsAfterAuthentication` property of the `ProviderManager`. This is discussed in the <<core-services-erasing-credentials,Core Services>> chapter.
+
+
+[[nsa-authentication-manager-id]]
+* **id**
+This attribute allows you to define an id for the internal instance for use in your own configuration. It is the same as the alias element, but provides a more consistent experience with elements that use the id attribute.
+
+
+[[nsa-authentication-manager-children]]
+===== Child Elements of <authentication-manager>
+
+
+* <<nsa-authentication-provider,authentication-provider>>
+* <<nsa-ldap-authentication-provider,ldap-authentication-provider>>
+
+
+
+[[nsa-authentication-provider]]
+==== <authentication-provider>
+Unless used with a `ref` attribute, this element is shorthand for configuring a <<core-services-dao-provider,DaoAuthenticationProvider>>. `DaoAuthenticationProvider` loads user information from a `UserDetailsService` and compares the username/password combination with the values supplied at login. The `UserDetailsService` instance can be defined either by using an available namespace element (`jdbc-user-service` or by using the `user-service-ref` attribute to point to a bean defined elsewhere in the application context). You can find examples of these variations in the <<ns-auth-providers,namespace introduction>>.
+
+
+[[nsa-authentication-provider-parents]]
+===== Parent Elements of <authentication-provider>
+
+
+* <<nsa-authentication-manager,authentication-manager>>
+
+
+
+[[nsa-authentication-provider-attributes]]
+===== <authentication-provider> Attributes
+
+
+[[nsa-authentication-provider-ref]]
+* **ref**
+Defines a reference to a Spring bean that implements `AuthenticationProvider`.
+
+If you have written your own `AuthenticationProvider` implementation (or want to configure one of Spring Security's own implementations as a traditional bean for some reason, then you can use the following syntax to add it to the internal list of `ProviderManager`:
+
+[source,xml]
+----
+
+<security:authentication-manager>
+<security:authentication-provider ref="myAuthenticationProvider" />
+</security:authentication-manager>
+<bean id="myAuthenticationProvider" class="com.something.MyAuthenticationProvider"/>
+
+----
+
+
+
+
+[[nsa-authentication-provider-user-service-ref]]
+* **user-service-ref**
+A reference to a bean that implements UserDetailsService that may be created using the standard bean element or the custom user-service element.
+
+
+[[nsa-authentication-provider-children]]
+===== Child Elements of <authentication-provider>
+
+
+* <<nsa-jdbc-user-service,jdbc-user-service>>
+* <<nsa-ldap-user-service,ldap-user-service>>
+* <<nsa-password-encoder,password-encoder>>
+* <<nsa-user-service,user-service>>
+
+
+
+[[nsa-jdbc-user-service]]
+==== <jdbc-user-service>
+Causes creation of a JDBC-based UserDetailsService.
+
+
+[[nsa-jdbc-user-service-attributes]]
+===== <jdbc-user-service> Attributes
+
+
+[[nsa-jdbc-user-service-authorities-by-username-query]]
+* **authorities-by-username-query**
+An SQL statement to query for a user's granted authorities given a username.
+
+The default is
+
+[source]
+----
+select username, authority from authorities where username = ?
+----
+
+
+
+
+[[nsa-jdbc-user-service-cache-ref]]
+* **cache-ref**
+Defines a reference to a cache for use with a UserDetailsService.
+
+
+[[nsa-jdbc-user-service-data-source-ref]]
+* **data-source-ref**
+The bean ID of the DataSource which provides the required tables.
+
+
+[[nsa-jdbc-user-service-group-authorities-by-username-query]]
+* **group-authorities-by-username-query**
+An SQL statement to query user's group authorities given a username. The default is
+
++
+
+[source]
+----
+select
+g.id, g.group_name, ga.authority
+from
+groups g, group_members gm, group_authorities ga
+where
+gm.username = ? and g.id = ga.group_id and g.id = gm.group_id
+----
+
+
+
+
+[[nsa-jdbc-user-service-id]]
+* **id**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-jdbc-user-service-role-prefix]]
+* **role-prefix**
+A non-empty string prefix that will be added to role strings loaded from persistent storage (default is "ROLE_"). Use the value "none" for no prefix in cases where the default is non-empty.
+
+
+[[nsa-jdbc-user-service-users-by-username-query]]
+* **users-by-username-query**
+An SQL statement to query a username, password, and enabled status given a username. The default is
+
++
+
+[source]
+----
+select username, password, enabled from users where username = ?
+----
+
+
+
+
+[[nsa-password-encoder]]
+==== <password-encoder>
+Authentication providers can optionally be configured to use a password encoder as described in the <<ns-password-encoder,namespace introduction>>. This will result in the bean being injected with the appropriate `PasswordEncoder` instance, potentially with an accompanying `SaltSource` bean to provide salt values for hashing.
+
+
+[[nsa-password-encoder-parents]]
+===== Parent Elements of <password-encoder>
+
+
+* <<nsa-authentication-provider,authentication-provider>>
+* <<nsa-password-compare,password-compare>>
+
+
+
+[[nsa-password-encoder-attributes]]
+===== <password-encoder> Attributes
+
+
+[[nsa-password-encoder-base64]]
+* **base64**
+Whether a string should be base64 encoded
+
+
+[[nsa-password-encoder-hash]]
+* **hash**
+Defines the hashing algorithm used on user passwords. We recommend strongly against using MD4, as it is a very weak hashing algorithm.
+
+
+[[nsa-password-encoder-ref]]
+* **ref**
+Defines a reference to a Spring bean that implements `PasswordEncoder`.
+
+
+[[nsa-password-encoder-children]]
+===== Child Elements of <password-encoder>
+
+
+* <<nsa-salt-source,salt-source>>
+
+
+
+[[nsa-salt-source]]
+==== <salt-source>
+Password salting strategy. A system-wide constant or a property from the UserDetails object can be used.
+
+
+[[nsa-salt-source-parents]]
+===== Parent Elements of <salt-source>
+
+
+* <<nsa-password-encoder,password-encoder>>
+
+
+
+[[nsa-salt-source-attributes]]
+===== <salt-source> Attributes
+
+
+[[nsa-salt-source-ref]]
+* **ref**
+Defines a reference to a Spring bean Id.
+
+
+[[nsa-salt-source-system-wide]]
+* **system-wide**
+A single value that will be used as the salt for a password encoder.
+
+
+[[nsa-salt-source-user-property]]
+* **user-property**
+A property of the UserDetails object which will be used as salt by a password encoder. Typically something like "username" might be used.
+
+
+[[nsa-user-service]]
+==== <user-service>
+Creates an in-memory UserDetailsService from a properties file or a list of "user" child elements. Usernames are converted to lower-case internally to allow for case-insensitive lookups, so this should not be used if case-sensitivity is required.
+
+
+[[nsa-user-service-attributes]]
+===== <user-service> Attributes
+
+
+[[nsa-user-service-id]]
+* **id**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-user-service-properties]]
+* **properties**
+The location of a Properties file where each line is in the format of
+
++
+
+[source]
+----
+username=password,grantedAuthority[,grantedAuthority][,enabled|disabled]
+----
+
+
+
+
+[[nsa-user-service-children]]
+===== Child Elements of <user-service>
+
+
+* <<nsa-user,user>>
+
+
+
+[[nsa-user]]
+==== <user>
+Represents a user in the application.
+
+
+[[nsa-user-parents]]
+===== Parent Elements of <user>
+
+
+* <<nsa-user-service,user-service>>
+
+
+
+[[nsa-user-attributes]]
+===== <user> Attributes
+
+
+[[nsa-user-authorities]]
+* **authorities**
+One of more authorities granted to the user. Separate authorities with a comma (but no space). For example, "ROLE_USER,ROLE_ADMINISTRATOR"
+
+
+[[nsa-user-disabled]]
+* **disabled**
+Can be set to "true" to mark an account as disabled and unusable.
+
+
+[[nsa-user-locked]]
+* **locked**
+Can be set to "true" to mark an account as locked and unusable.
+
+
+[[nsa-user-name]]
+* **name**
+The username assigned to the user.
+
+
+[[nsa-user-password]]
+* **password**
+The password assigned to the user. This may be hashed if the corresponding authentication provider supports hashing (remember to set the "hash" attribute of the "user-service" element). This attribute be omitted in the case where the data will not be used for authentication, but only for accessing authorities. If omitted, the namespace will generate a random value, preventing its accidental use for authentication. Cannot be empty.
+
+
+[[nsa-method-security]]
+=== Method Security
+
+
+[[nsa-global-method-security]]
+==== <global-method-security>
+This element is the primary means of adding support for securing methods on Spring Security beans. Methods can be secured by the use of annotations (defined at the interface or class level) or by defining a set of pointcuts as child elements, using AspectJ syntax.
+
+
+[[nsa-global-method-security-attributes]]
+===== <global-method-security> Attributes
+
+
+[[nsa-global-method-security-access-decision-manager-ref]]
+* **access-decision-manager-ref**
+Method security uses the same `AccessDecisionManager` configuration as web security, but this can be overridden using this attribute. By default an AffirmativeBased implementation is used for with a RoleVoter and an AuthenticatedVoter.
+
+
+[[nsa-global-method-security-authentication-manager-ref]]
+* **authentication-manager-ref**
+A reference to an `AuthenticationManager` that should be used for method security.
+
+
+[[nsa-global-method-security-jsr250-annotations]]
+* **jsr250-annotations**
+Specifies whether JSR-250 style attributes are to be used (for example "RolesAllowed"). This will require the javax.annotation.security classes on the classpath. Setting this to true also adds a `Jsr250Voter` to the `AccessDecisionManager`, so you need to make sure you do this if you are using a custom implementation and want to use these annotations.
+
+
+[[nsa-global-method-security-metadata-source-ref]]
+* **metadata-source-ref**
+An external `MethodSecurityMetadataSource` instance can be supplied which will take priority over other sources (such as the default annotations).
+
+
+[[nsa-global-method-security-mode]]
+* **mode**
+This attribute can be set to "aspectj" to specify that AspectJ should be used instead of the default Spring AOP. Secured methods must be woven with the `AnnotationSecurityAspect` from the `spring-security-aspects` module.
+
+It is important to note that AspectJ follows Java's rule that annotations on interfaces are not inherited. This means that methods that define the Security annotations on the interface will not be secured. Instead, you must place the Security annotation on the class when using AspectJ.
+
+
+[[nsa-global-method-security-order]]
+* **order**
+Allows the advice "order" to be set for the method security interceptor.
+
+
+[[nsa-global-method-security-pre-post-annotations]]
+* **pre-post-annotations**
+Specifies whether the use of Spring Security's pre and post invocation annotations (@PreFilter, @PreAuthorize, @PostFilter, @PostAuthorize) should be enabled for this application context. Defaults to "disabled".
+
+
+[[nsa-global-method-security-proxy-target-class]]
+* **proxy-target-class**
+If true, class based proxying will be used instead of interface based proxying.
+
+
+[[nsa-global-method-security-run-as-manager-ref]]
+* **run-as-manager-ref**
+A reference to an optional `RunAsManager` implementation which will be used by the configured `MethodSecurityInterceptor`
+
+
+[[nsa-global-method-security-secured-annotations]]
+* **secured-annotations**
+Specifies whether the use of Spring Security's @Secured annotations should be enabled for this application context. Defaults to "disabled".
+
+
+[[nsa-global-method-security-children]]
+===== Child Elements of <global-method-security>
+
+
+* <<nsa-after-invocation-provider,after-invocation-provider>>
+* <<nsa-expression-handler,expression-handler>>
+* <<nsa-pre-post-annotation-handling,pre-post-annotation-handling>>
+* <<nsa-protect-pointcut,protect-pointcut>>
+
+
+
+[[nsa-after-invocation-provider]]
+==== <after-invocation-provider>
+This element can be used to decorate an `AfterInvocationProvider` for use by the security interceptor maintained by the `<global-method-security>` namespace. You can define zero or more of these within the `global-method-security` element, each with a `ref` attribute pointing to an `AfterInvocationProvider` bean instance within your application context.
+
+
+[[nsa-after-invocation-provider-parents]]
+===== Parent Elements of <after-invocation-provider>
+
+
+* <<nsa-global-method-security,global-method-security>>
+
+
+
+[[nsa-after-invocation-provider-attributes]]
+===== <after-invocation-provider> Attributes
+
+
+[[nsa-after-invocation-provider-ref]]
+* **ref**
+Defines a reference to a Spring bean that implements `AfterInvocationProvider`.
+
+
+[[nsa-pre-post-annotation-handling]]
+==== <pre-post-annotation-handling>
+Allows the default expression-based mechanism for handling Spring Security's pre and post invocation annotations (@PreFilter, @PreAuthorize, @PostFilter, @PostAuthorize) to be replaced entirely. Only applies if these annotations are enabled.
+
+
+[[nsa-pre-post-annotation-handling-parents]]
+===== Parent Elements of <pre-post-annotation-handling>
+
+
+* <<nsa-global-method-security,global-method-security>>
+
+
+
+[[nsa-pre-post-annotation-handling-children]]
+===== Child Elements of <pre-post-annotation-handling>
+
+
+* <<nsa-invocation-attribute-factory,invocation-attribute-factory>>
+* <<nsa-post-invocation-advice,post-invocation-advice>>
+* <<nsa-pre-invocation-advice,pre-invocation-advice>>
+
+
+
+[[nsa-invocation-attribute-factory]]
+==== <invocation-attribute-factory>
+Defines the PrePostInvocationAttributeFactory instance which is used to generate pre and post invocation metadata from the annotated methods.
+
+
+[[nsa-invocation-attribute-factory-parents]]
+===== Parent Elements of <invocation-attribute-factory>
+
+
+* <<nsa-pre-post-annotation-handling,pre-post-annotation-handling>>
+
+
+
+[[nsa-invocation-attribute-factory-attributes]]
+===== <invocation-attribute-factory> Attributes
+
+
+[[nsa-invocation-attribute-factory-ref]]
+* **ref**
+Defines a reference to a Spring bean Id.
+
+
+[[nsa-post-invocation-advice]]
+==== <post-invocation-advice>
+Customizes the `PostInvocationAdviceProvider` with the ref as the `PostInvocationAuthorizationAdvice` for the <pre-post-annotation-handling> element.
+
+
+[[nsa-post-invocation-advice-parents]]
+===== Parent Elements of <post-invocation-advice>
+
+
+* <<nsa-pre-post-annotation-handling,pre-post-annotation-handling>>
+
+
+
+[[nsa-post-invocation-advice-attributes]]
+===== <post-invocation-advice> Attributes
+
+
+[[nsa-post-invocation-advice-ref]]
+* **ref**
+Defines a reference to a Spring bean Id.
+
+
+[[nsa-pre-invocation-advice]]
+==== <pre-invocation-advice>
+Customizes the `PreInvocationAuthorizationAdviceVoter` with the ref as the `PreInvocationAuthorizationAdviceVoter` for the <pre-post-annotation-handling> element.
+
+
+[[nsa-pre-invocation-advice-parents]]
+===== Parent Elements of <pre-invocation-advice>
+
+
+* <<nsa-pre-post-annotation-handling,pre-post-annotation-handling>>
+
+
+
+[[nsa-pre-invocation-advice-attributes]]
+===== <pre-invocation-advice> Attributes
+
+
+[[nsa-pre-invocation-advice-ref]]
+* **ref**
+Defines a reference to a Spring bean Id.
+
+
+[[nsa-protect-pointcut]]
+==== Securing Methods using
+`<protect-pointcut>`
+Rather than defining security attributes on an individual method or class basis using the `@Secured` annotation, you can define cross-cutting security constraints across whole sets of methods and interfaces in your service layer using the `<protect-pointcut>` element. You can find an example in the <<ns-protect-pointcut,namespace introduction>>.
+
+
+[[nsa-protect-pointcut-parents]]
+===== Parent Elements of <protect-pointcut>
+
+
+* <<nsa-global-method-security,global-method-security>>
+
+
+
+[[nsa-protect-pointcut-attributes]]
+===== <protect-pointcut> Attributes
+
+
+[[nsa-protect-pointcut-access]]
+* **access**
+Access configuration attributes list that applies to all methods matching the pointcut, e.g. "ROLE_A,ROLE_B"
+
+
+[[nsa-protect-pointcut-expression]]
+* **expression**
+An AspectJ expression, including the 'execution' keyword. For example, 'execution(int com.foo.TargetObject.countLength(String))' (without the quotes).
+
+
+[[nsa-intercept-methods]]
+==== <intercept-methods>
+Can be used inside a bean definition to add a security interceptor to the bean and set up access configuration attributes for the bean's methods
+
+
+[[nsa-intercept-methods-attributes]]
+===== <intercept-methods> Attributes
+
+
+[[nsa-intercept-methods-access-decision-manager-ref]]
+* **access-decision-manager-ref**
+Optional AccessDecisionManager bean ID to be used by the created method security interceptor.
+
+
+[[nsa-intercept-methods-children]]
+===== Child Elements of <intercept-methods>
+
+
+* <<nsa-protect,protect>>
+
+
+
+[[nsa-method-security-metadata-source]]
+==== <method-security-metadata-source>
+Creates a MethodSecurityMetadataSource instance
+
+
+[[nsa-method-security-metadata-source-attributes]]
+===== <method-security-metadata-source> Attributes
+
+
+[[nsa-method-security-metadata-source-id]]
+* **id**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-method-security-metadata-source-use-expressions]]
+* **use-expressions**
+Enables the use of expressions in the 'access' attributes in <intercept-url> elements rather than the traditional list of configuration attributes. Defaults to 'false'. If enabled, each attribute should contain a single Boolean expression. If the expression evaluates to 'true', access will be granted.
+
+
+[[nsa-method-security-metadata-source-children]]
+===== Child Elements of <method-security-metadata-source>
+
+
+* <<nsa-protect,protect>>
+
+
+
+[[nsa-protect]]
+==== <protect>
+Defines a protected method and the access control configuration attributes that apply to it. We strongly advise you NOT to mix "protect" declarations with any services provided "global-method-security".
+
+
+[[nsa-protect-parents]]
+===== Parent Elements of <protect>
+
+
+* <<nsa-intercept-methods,intercept-methods>>
+* <<nsa-method-security-metadata-source,method-security-metadata-source>>
+
+
+
+[[nsa-protect-attributes]]
+===== <protect> Attributes
+
+
+[[nsa-protect-access]]
+* **access**
+Access configuration attributes list that applies to the method, e.g. "ROLE_A,ROLE_B".
+
+
+[[nsa-protect-method]]
+* **method**
+A method name
+
+
+[[nsa-ldap]]
+=== LDAP Namespace Options
+LDAP is covered in some details in <<ldap,its own chapter>>. We will expand on that here with some explanation of how the namespace options map to Spring beans. The LDAP implementation uses Spring LDAP extensively, so some familiarity with that project's API may be useful.
+
+
+[[nsa-ldap-server]]
+==== Defining the LDAP Server using the
+`<ldap-server>` Element
+This element sets up a Spring LDAP `ContextSource` for use by the other LDAP beans, defining the location of the LDAP server and other information (such as a username and password, if it doesn't allow anonymous access) for connecting to it. It can also be used to create an embedded server for testing. Details of the syntax for both options are covered in the <<ldap-server,LDAP chapter>>. The actual `ContextSource` implementation is `DefaultSpringSecurityContextSource` which extends Spring LDAP's `LdapContextSource` class. The `manager-dn` and `manager-password` attributes map to the latter's `userDn` and `password` properties respectively.
+
+If you only have one server defined in your application context, the other LDAP namespace-defined beans will use it automatically. Otherwise, you can give the element an "id" attribute and refer to it from other namespace beans using the `server-ref` attribute. This is actually the bean `id` of the `ContextSource` instance, if you want to use it in other traditional Spring beans.
+
+
+[[nsa-ldap-server-attributes]]
+===== <ldap-server> Attributes
+
+
+[[nsa-ldap-server-id]]
+* **id**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-ldap-server-ldif]]
+* **ldif**
+Explicitly specifies an ldif file resource to load into an embedded LDAP server. The ldiff is should be a Spring resource pattern (i.e. classpath:init.ldiff). The default is classpath*:*.ldiff
+
+
+[[nsa-ldap-server-manager-dn]]
+* **manager-dn**
+Username (DN) of the "manager" user identity which will be used to authenticate to a (non-embedded) LDAP server. If omitted, anonymous access will be used.
+
+
+[[nsa-ldap-server-manager-password]]
+* **manager-password**
+The password for the manager DN. This is required if the manager-dn is specified.
+
+
+[[nsa-ldap-server-port]]
+* **port**
+Specifies an IP port number. Used to configure an embedded LDAP server, for example. The default value is 33389.
+
+
+[[nsa-ldap-server-root]]
+* **root**
+Optional root suffix for the embedded LDAP server. Default is "dc=springframework,dc=org"
+
+
+[[nsa-ldap-server-url]]
+* **url**
+Specifies the ldap server URL when not using the embedded LDAP server.
+
+
+[[nsa-ldap-authentication-provider]]
+==== <ldap-authentication-provider>
+This element is shorthand for the creation of an `LdapAuthenticationProvider` instance. By default this will be configured with a `BindAuthenticator` instance and a `DefaultAuthoritiesPopulator`. As with all namespace authentication providers, it must be included as a child of the `authentication-provider` element.
+
+
+[[nsa-ldap-authentication-provider-parents]]
+===== Parent Elements of <ldap-authentication-provider>
+
+
+* <<nsa-authentication-manager,authentication-manager>>
+
+
+
+[[nsa-ldap-authentication-provider-attributes]]
+===== <ldap-authentication-provider> Attributes
+
+
+[[nsa-ldap-authentication-provider-group-role-attribute]]
+* **group-role-attribute**
+The LDAP attribute name which contains the role name which will be used within Spring Security. Maps to the ``DefaultLdapAuthoritiesPopulator``'s `groupRoleAttribute` property. Defaults to "cn".
+
+
+[[nsa-ldap-authentication-provider-group-search-base]]
+* **group-search-base**
+Search base for group membership searches. Maps to the ``DefaultLdapAuthoritiesPopulator``'s `groupSearchBase` constructor argument. Defaults to "" (searching from the root).
+
+
+[[nsa-ldap-authentication-provider-group-search-filter]]
+* **group-search-filter**
+Group search filter. Maps to the ``DefaultLdapAuthoritiesPopulator``'s `groupSearchFilter` property. Defaults to (uniqueMember={0}). The substituted parameter is the DN of the user.
+
+
+[[nsa-ldap-authentication-provider-role-prefix]]
+* **role-prefix**
+A non-empty string prefix that will be added to role strings loaded from persistent. Maps to the ``DefaultLdapAuthoritiesPopulator``'s `rolePrefix` property. Defaults to "ROLE_". Use the value "none" for no prefix in cases where the default is non-empty.
+
+
+[[nsa-ldap-authentication-provider-server-ref]]
+* **server-ref**
+The optional server to use. If omitted, and a default LDAP server is registered (using <ldap-server> with no Id), that server will be used.
+
+
+[[nsa-ldap-authentication-provider-user-context-mapper-ref]]
+* **user-context-mapper-ref**
+Allows explicit customization of the loaded user object by specifying a UserDetailsContextMapper bean which will be called with the context information from the user's directory entry
+
+
+[[nsa-ldap-authentication-provider-user-details-class]]
+* **user-details-class**
+Allows the objectClass of the user entry to be specified. If set, the framework will attempt to load standard attributes for the defined class into the returned UserDetails object
+
+
+[[nsa-ldap-authentication-provider-user-dn-pattern]]
+* **user-dn-pattern**
+If your users are at a fixed location in the directory (i.e. you can work out the DN directly from the username without doing a directory search), you can use this attribute to map directly to the DN. It maps directly to the `userDnPatterns` property of `AbstractLdapAuthenticator`. The value is a specific pattern used to build the user's DN, for example "uid={0},ou=people". The key "{0}" must be present and will be substituted with the username.
+
+
+[[nsa-ldap-authentication-provider-user-search-base]]
+* **user-search-base**
+Search base for user searches. Defaults to "". Only used with a 'user-search-filter'.
+
++
+
+If you need to perform a search to locate the user in the directory, then you can set these attributes to control the search. The `BindAuthenticator` will be configured with a `FilterBasedLdapUserSearch` and the attribute values map directly to the first two arguments of that bean's constructor. If these attributes aren't set and no `user-dn-pattern` has been supplied as an alternative, then the default search values of `user-search-filter="(uid={0})"` and `user-search-base=""` will be used.
+
+
+[[nsa-ldap-authentication-provider-user-search-filter]]
+* **user-search-filter**
+The LDAP filter used to search for users (optional). For example "(uid={0})". The substituted parameter is the user's login name.
+
++
+
+If you need to perform a search to locate the user in the directory, then you can set these attributes to control the search. The `BindAuthenticator` will be configured with a `FilterBasedLdapUserSearch` and the attribute values map directly to the first two arguments of that bean's constructor. If these attributes aren't set and no `user-dn-pattern` has been supplied as an alternative, then the default search values of `user-search-filter="(uid={0})"` and `user-search-base=""` will be used.
+
+
+[[nsa-ldap-authentication-provider-children]]
+===== Child Elements of <ldap-authentication-provider>
+
+
+* <<nsa-password-compare,password-compare>>
+
+
+
+[[nsa-password-compare]]
+==== <password-compare>
+This is used as child element to `<ldap-provider>` and switches the authentication strategy from `BindAuthenticator` to `PasswordComparisonAuthenticator`.
+
+
+[[nsa-password-compare-parents]]
+===== Parent Elements of <password-compare>
+
+
+* <<nsa-ldap-authentication-provider,ldap-authentication-provider>>
+
+
+
+[[nsa-password-compare-attributes]]
+===== <password-compare> Attributes
+
+
+[[nsa-password-compare-hash]]
+* **hash**
+Defines the hashing algorithm used on user passwords. We recommend strongly against using MD4, as it is a very weak hashing algorithm.
+
+
+[[nsa-password-compare-password-attribute]]
+* **password-attribute**
+The attribute in the directory which contains the user password. Defaults to "userPassword".
+
+
+[[nsa-password-compare-children]]
+===== Child Elements of <password-compare>
+
+
+* <<nsa-password-encoder,password-encoder>>
+
+
+
+[[nsa-ldap-user-service]]
+==== <ldap-user-service>
+This element configures an LDAP `UserDetailsService`. The class used is `LdapUserDetailsService` which is a combination of a `FilterBasedLdapUserSearch` and a `DefaultLdapAuthoritiesPopulator`. The attributes it supports have the same usage as in `<ldap-provider>`.
+
+
+[[nsa-ldap-user-service-attributes]]
+===== <ldap-user-service> Attributes
+
+
+[[nsa-ldap-user-service-cache-ref]]
+* **cache-ref**
+Defines a reference to a cache for use with a UserDetailsService.
+
+
+[[nsa-ldap-user-service-group-role-attribute]]
+* **group-role-attribute**
+The LDAP attribute name which contains the role name which will be used within Spring Security. Defaults to "cn".
+
+
+[[nsa-ldap-user-service-group-search-base]]
+* **group-search-base**
+Search base for group membership searches. Defaults to "" (searching from the root).
+
+
+[[nsa-ldap-user-service-group-search-filter]]
+* **group-search-filter**
+Group search filter. Defaults to (uniqueMember={0}). The substituted parameter is the DN of the user.
+
+
+[[nsa-ldap-user-service-id]]
+* **id**
+A bean identifier, used for referring to the bean elsewhere in the context.
+
+
+[[nsa-ldap-user-service-role-prefix]]
+* **role-prefix**
+A non-empty string prefix that will be added to role strings loaded from persistent storage (e.g. "ROLE_"). Use the value "none" for no prefix in cases where the default is non-empty.
+
+
+[[nsa-ldap-user-service-server-ref]]
+* **server-ref**
+The optional server to use. If omitted, and a default LDAP server is registered (using <ldap-server> with no Id), that server will be used.
+
+
+[[nsa-ldap-user-service-user-context-mapper-ref]]
+* **user-context-mapper-ref**
+Allows explicit customization of the loaded user object by specifying a UserDetailsContextMapper bean which will be called with the context information from the user's directory entry
+
+
+[[nsa-ldap-user-service-user-details-class]]
+* **user-details-class**
+Allows the objectClass of the user entry to be specified. If set, the framework will attempt to load standard attributes for the defined class into the returned UserDetails object
+
+
+[[nsa-ldap-user-service-user-search-base]]
+* **user-search-base**
+Search base for user searches. Defaults to "". Only used with a 'user-search-filter'.
+
+
+[[nsa-ldap-user-service-user-search-filter]]
+* **user-search-filter**
+The LDAP filter used to search for users (optional). For example "(uid={0})". The substituted parameter is the user's login name.

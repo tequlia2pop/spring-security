@@ -1,19 +1,20 @@
-[[csrf]]
-= 跨站请求伪造（Cross Site Request Forgery，CSRF）
+= Spring Security Reference
 Doc Writer <tequlia2pop@gmail.com>
 :toc: left
 :homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#csrf
 
-本节讨论 Spring Security 的 http://en.wikipedia.org/wiki/Cross-site_request_forgery[跨站点请求伪造（CSRF）] 支持。
+[[csrf]]
+== Cross Site Request Forgery (CSRF)
+本节讨论了 Spring Security 的 http://en.wikipedia.org/wiki/Cross-site_request_forgery[Cross Site Request Forgery (CSRF)] 支持。
 
-[[csrf-attacks]]
-== CSRF 攻击
 
+=== CSRF 攻击
 在讨论 Spring Security 如何保护应用程序不受 CSRF 攻击之前，我们将解释 CSRF 攻击是什么。让我们来看一个具体的例子，以便更好地了解。
 
 假设你的银行网站提供了一个表单，它允许当前登录的用户将资金转移到另一个银行帐户。例如，HTTP 请求可能如下所示：
 
-[literal]
+
+[source]
 ----
 POST /transfer HTTP/1.1
 Host: bank.example.com
@@ -25,8 +26,7 @@ amount=100.00&routingNumber=1234&account=9876
 
 现在假设你通过了银行网站的认证，在没有退出的前提下访问了一个恶意网站。恶意网站包含具有以下表单的 HTML 页面：
 
-[source,html,indent=0]
-[subs="verbatim,quotes"]
+[source,xml]
 ----
 <form action="https://bank.example.com/transfer" method="post">
 <input type="hidden"
@@ -47,18 +47,17 @@ amount=100.00&routingNumber=1234&account=9876
 
 最糟糕的是，整个过程可能已经使用 JavaScript 自动化。这意味着你甚至不需要点击按钮。那么我们如何保护自己免受这种攻击呢？
 
-[[synchronizer-token-pattern]]
-== 同步 token 模式
-
+=== Synchronizer Token Pattern
 问题在于来自银行网站的 HTTP 请求和来自恶意网站的请求是完全相同的。这意味着没有办法拒绝来自恶意网站的请求，并允许来自银行网站的请求。为了防止 CSRF 攻击，我们需要确保请求中有某些内容是恶意站点无法提供的。
 
 一个解决方案是使用 https://www.owasp.org/index.php/Cross-Site_Request_Forgery_(CSRF)_Prevention_Cheat_Sheet#General_Recommendation:_Synchronizer_Token_Pattern[Synchronizer Token Pattern]。此解决方案确保每个请求除了 sesion cookie 之外，还需要随机生成的 token 作为 HTTP 参数。提交请求时，服务器必须查找参数的期望值，并将其与请求中的实际值进行比较。如果值不匹配，请求将失败。
 
-We can relax the expectations to only require the token for each HTTP request that updates state. This can be safely done since the same origin policy ensures the evil site cannot read the response.此外，我们不希望在 HTTP GET 中包含随机 token，因为这可能导致 token 泄露。
+We can relax the expectations to only require the token for each HTTP request that updates state. This can be safely done since the same origin policy ensures the evil site cannot read the response.此外，我们不希望在 HTTP GET 中包含随机的 token，因为这可能导致 token 泄露。
 
 让我们来看看我们的例子会如何改变。假设随机生成的 token 保存在名为 _csrf 的 HTTP 参数中。例如，转账的请求将如下所示：
 
-[literal]
+
+[source]
 ----
 POST /transfer HTTP/1.1
 Host: bank.example.com
@@ -68,20 +67,19 @@ Content-Type: application/x-www-form-urlencoded
 amount=100.00&routingNumber=1234&account=9876&_csrf=<secure-random>
 ----
 
+
 你会注意到，我们添加了 _csrf 参数，并将它的值设置为一个随机值。现在恶意网站将无法猜测 _csrf 参数的正确值（必须在恶意网站上明确提供），并且当服务器将实际 token 与预期 token 进行比较时，转账将失败。
 
-[[when-to-use-csrf-protection]]
-== 何时使用 CSRF 防护
 
+=== 何时使用 CSRF 防护
 什么时候应该使用 CSRF 防护？我们的建议是对正常用户通过浏览器处理的任何请求都应该使用 CSRF 防护。如果你只创建由非浏览器客户端使用的服务，则可能需要禁用 CSRF 防护。
 
-[[csrf-protection-and-jsons]]
-=== CSRF 防护和 JSON
 
+==== CSRF 防护和 JSON
 一个常见的问题是“我需要保护 javascript 的 JSON 请求吗？” 简短的答案是，看具体的情况。但是，你必须非常小心，因为 CSRF 漏洞可能会影响 JSON 请求。例如，恶意用户可以 http://blog.opensecurityresearch.com/2012/02/json-csrf-with-parameter-padding.html[使用下列表单通过 JSON 创建 CSRF]：
 
-[source,html,indent=0]
-[subs="verbatim,quotes"]
+
+[source,xml]
 ----
 <form action="https://bank.example.com/transfer" method="post" enctype="text/plain">
 <input name='{"amount":100,"routingNumber":"evilsRoutingNumber","account":"evilsAccountNumber", "ignore_me":"' value='test"}' type='hidden'>
@@ -90,10 +88,11 @@ amount=100.00&routingNumber=1234&account=9876&_csrf=<secure-random>
 </form>
 ----
 
+
 这将产生以下 JSON 结构
 
-[source,json,indent=0]
-[subs="verbatim,quotes"]
+
+[source,javascript]
 ----
 { "amount": 100,
 "routingNumber": "evilsRoutingNumber",
@@ -104,8 +103,7 @@ amount=100.00&routingNumber=1234&account=9876&_csrf=<secure-random>
 
 If an application were not validating the Content-Type, then it would be exposed to this exploit. Depending on the setup, a Spring MVC application that validates the Content-Type could still be exploited by updating the URL suffix to end with ".json" as shown below:
 
-[source,html,indent=0]
-[subs="verbatim,quotes"]
+[source,xml]
 ----
 <form action="https://bank.example.com/transfer.json" method="post" enctype="text/plain">
 <input name='{"amount":100,"routingNumber":"evilsRoutingNumber","account":"evilsAccountNumber", "ignore_me":"' value='test"}' type='hidden'>
@@ -114,40 +112,35 @@ If an application were not validating the Content-Type, then it would be exposed
 </form>
 ----
 
-[[csrf-and-stateless-browser-applications]]
-=== CSRF 和无状态浏览器应用程序
-
-如果我的应用程序是无状态的，怎么办？这并不一定意味着你是受保护的。事实上，如果用户不需要在给定请求的 Web 浏览器中执行任何操作，他们仍然容易可能受到 CSRF 攻击。
+==== CSRF 和无状态浏览器应用程序
+如果我的应用程序是无状态的，怎么办？这并不一定意味着你是受保护的。事实上，如果用户不需要在给定请求的 Web 浏览器中执行任何操作，他们仍然容易受到 CSRF 攻击。
 
 例如，考虑一个应用程序使用了包含所有状态的自定义 cookie 来进行认证，而不是使用 JSESSIONID。当发生 CSRF 攻击时，自定义 cookie 将与请求一起发送，其方式与在上一个示例中发送 JSESSIONID cookie 的方式相同。
 
 使用基本认证的用户也容易受到 CSRF 攻击，因为浏览器将自动在任何请求中包含用户名和密码，其方式与在上一个示例中发送 JSESSIONID cookie 的方式相同。
 
 [[csrf-using]]
-== 使用 Spring Security CSRF 防护
+=== 使用 Spring Security CSRF 防护
+那么使用 Spring Security 保护我们的网站免受 CSRF 攻击有什么必要的步骤？使用 Spring Security 的 CSRF 保护的步骤如下：
 
-那么使用 Spring Security 保护我们的网站免受 CSRF 攻击有什么必要的步骤？ 使用 Spring Security 的 CSRF 保护的步骤如下：
-
-* <<csrf-use-proper-verbs>>
-* <<csrf-configure>>
-* <<csrf-include-csrf-token>>
+* <<csrf-use-proper-verbs,Use proper HTTP verbs>>
+* <<csrf-configure,Configure CSRF Protection>>
+* <<csrf-include-csrf-token,Include the CSRF Token>>
 
 [[csrf-use-proper-verbs]]
-=== 使用正确的 HTTP 方法
-
-防止 CSRF 攻击的第一步是确保你的网站使用正确的 HTTP 方法。具体来说，在使用 Spring Security 的 CSRF 支持之前，你需要确定你的应用程序使用 PATCH，POST，PUT 和/或 DELETE 来修改状态。
+==== 使用正确的 HTTP 方法
+防止 CSRF 攻击的第一步是确保你的网站使用了正确的 HTTP 方法。具体来说，在使用 Spring Security 的 CSRF 支持之前，你需要确定你的应用程序使用 PATCH、POST、PUT 和/或 DELETE 来修改状态。
 
 这不是 Spring Security 支持的限制，而是正确的 CSRF 预防的一般要求。原因是在 HTTP GET 中包含私有信息可能导致信息泄露。有关使用 POST 而不是 GET 来获取敏感信息的一般指导，请参阅 http://www.w3.org/Protocols/rfc2616/rfc2616-sec15.html#sec15.1.3[RFC 2616 Section 15.1.3 Encoding Sensitive Information in URI’s]。
 
-[[csrf-configure]]
-=== 配置 CSRF 防护
 
+[[csrf-configure]]
+==== 配置 CSRF 防护
 下一步是在应用程序中引入 Spring Security 的 CSRF 防护。一些框架通过使用户的会话失效来处理无效的 CSRF token，但这会导致 <<csrf-logout, 自己的问题>>。相反，默认情况下，Spring Security 的 CSRF 防护将导致一个 HTTP 403 access denied。可以通过配置 `AccessDeniedHandler` 来定制，它可以以不同方式来处理 `InvalidCsrfTokenException`。
 
 从 Spring Security 4.0 开始，XML 配置默认启用 CSRF 防护。如果要禁用 CSRF 防护，则可以在下面看到相应的 XML 配置。
 
-[source,xml,indent=0]
-[subs="verbatim,quotes"]
+[source,xml]
 ----
 <http>
 	<!-- ... -->
@@ -155,10 +148,9 @@ If an application were not validating the Content-Type, then it would be exposed
 </http>
 ----
 
-Java 配置默认启用 CSRF 防护。如果要禁用 CSRF，则可以在下面看到相应的 Java 配置。有关如何配置 CSRF 防护的其他定制，请参阅 csrf() 的Javadoc。
+Java 配置也默认启用 CSRF 防护。如果要禁用 CSRF，则可以在下面看到相应的 Java 配置。有关如何配置 CSRF 防护的其他定制，请参阅 csrf() 的Javadoc。
 
-[source,java,indent=0]
-[subs="verbatim,quotes"]
+[source,java]
 ----
 @EnableWebSecurity
 public class WebSecurityConfig extends
@@ -172,16 +164,15 @@ protected void configure(HttpSecurity http) throws Exception {
 }
 ----
 
+
 [[csrf-include-csrf-token]]
-=== 包含 CSRF Token
+==== 引入 CSRF token
 
 [[csrf-include-csrf-token-form]]
-==== 表单提交
+===== 表单提交  
+最后一步是确保在所有 PATCH、POST、PUT 和 DELETE 方法中包含了 CSRF token。一种方法是使用 `_csrf` 请求属性来获取当前的 `CsrfToken`。使用 JSP 执行此操作的示例如下所示：
 
-最后一步是确保在所有 PATCH，POST，PUT 和 DELETE 方法中包含了 CSRF token。一种方法是使用 `_csrf` 请求属性来获取当前的 `CsrfToken`。使用 JSP 执行此操作的示例如下所示：
-
-[source,jsp,indent=0]
-[subs="verbatim,quotes"]
+[source,xml]
 ----
 <c:url var="logoutUrl" value="/logout"/>
 <form action="${logoutUrl}"
@@ -196,14 +187,231 @@ protected void configure(HttpSecurity http) throws Exception {
 
 更容易的方法是使用 Spring Security JSP 标签库的 <<the-csrfinput-tag, csrfInput 标签>>。
 
-NOTE: 如果你使用了 Spring MVC `<form:form>` 标签或 http://www.thymeleaf.org/whatsnew21.html#reqdata[Thymeleaf 2.1+] 并且使用了 `@EnableWebSecurity`，`CsrfToken` 会自动包含（使用了 `CsrfRequestDataValueProcessor`）。
+[NOTE]
+====
+如果你使用了 Spring MVC `<form:form>` 标签或 http://www.thymeleaf.org/whatsnew21.html#reqdata[Thymeleaf 2.1+] 并且使用了 `@EnableWebSecurity`，会自动引入`CsrfToken`（使用了 `CsrfRequestDataValueProcessor`）。
+====
 
 [[csrf-include-csrf-token-ajax]]
-==== Ajax and JSON 请求
+===== Ajax 和 JSON 请求
+If you are using JSON, then it is not possible to submit the CSRF token within an HTTP parameter. Instead you can submit the token within a HTTP header. A typical pattern would be to include the CSRF token within your meta tags. An example with a JSP is shown below:
+
+
+[source,xml]
+----
+<html>
+<head>
+	<meta name="_csrf" content="${_csrf.token}"/>
+	<!-- default header name is X-CSRF-TOKEN -->
+	<meta name="_csrf_header" content="${_csrf.headerName}"/>
+	<!-- ... -->
+</head>
+<!-- ... -->
+----
+
+Instead of manually creating the meta tags, you can use the simpler <<the-csrfmetatags-tag,csrfMetaTags tag>> from the Spring Security JSP tag library.
+
+You can then include the token within all your Ajax requests. If you were using jQuery, this could be done with the following:
+
+[source,javascript]
+----
+$(function () {
+var token = $("meta[name='_csrf']").attr("content");
+var header = $("meta[name='_csrf_header']").attr("content");
+$(document).ajaxSend(function(e, xhr, options) {
+	xhr.setRequestHeader(header, token);
+});
+});
+----
+
+As an alternative to jQuery, we recommend using http://cujojs.com/[cujoJS's] rest.js. The https://github.com/cujojs/rest[rest.js] module provides advanced support for working with HTTP requests and responses in RESTful ways. A core capability is the ability to contextualize the HTTP client adding behavior as needed by chaining interceptors on to the client.
+
+[source,javascript]
+----
+var client = rest.chain(csrf, {
+token: $("meta[name='_csrf']").attr("content"),
+name: $("meta[name='_csrf_header']").attr("content")
+});
+----
+
+
+The configured client can be shared with any component of the application that needs to make a request to the CSRF protected resource. One significant different between rest.js and jQuery is that only requests made with the configured client will contain the CSRF token, vs jQuery where __all__ requests will include the token. The ability to scope which requests receive the token helps guard against leaking the CSRF token to a third party. Please refer to the https://github.com/cujojs/rest/tree/master/docs[rest.js reference documentation] for more information on rest.js.
 
 [[csrf-cookie]]
-==== CookieCsrfTokenRepository
+===== CookieCsrfTokenRepository
 
-== CSRF Caveats
+There can be cases where users will want to persist the `CsrfToken` in a cookie.
+By default the `CookieCsrfTokenRepository` will write to a cookie named `XSRF-TOKEN` and read it from a header named `X-XSRF-TOKEN` or the HTTP parameter `_csrf`.
+These defaults come from https://docs.angularjs.org/api/ng/service/$http#cross-site-request-forgery-xsrf-protection[AngularJS]
 
-== Overriding Defaults
+You can configure `CookieCsrfTokenRepository` in XML using the following:
+
+[source,xml]
+----
+<http>
+	<!-- ... -->
+	<csrf token-repository-ref="tokenRepository"/>
+</http>
+<b:bean id="tokenRepository"
+	class="org.springframework.security.web.csrf.CookieCsrfTokenRepository"
+	p:cookieHttpOnly="false"/>
+----
+
+[NOTE]
+====
+The sample explicitly sets `cookieHttpOnly=false`.
+This is necessary to allow JavaScript (i.e. AngularJS) to read it.
+If you do not need the ability to read the cookie with JavaScript directly, it is recommended to omit `cookieHttpOnly=false` to improve security.
+====
+
+
+You can configure `CookieCsrfTokenRepository` in Java Configuration using:
+
+[source,java]
+----
+@EnableWebSecurity
+public class WebSecurityConfig extends
+		WebSecurityConfigurerAdapter {
+
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		http
+			.csrf()
+				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse());
+	}
+}
+----
+
+[NOTE]
+====
+The sample explicitly sets `cookieHttpOnly=false`.
+This is necessary to allow JavaScript (i.e. AngularJS) to read it.
+If you do not need the ability to read the cookie with JavaScript directly, it is recommended to omit `cookieHttpOnly=false` (by using `new CookieCsrfTokenRepository()` instead) to improve security.
+====
+
+
+[[csrf-caveats]]
+=== CSRF Caveats
+There are a few caveats when implementing CSRF.
+
+
+[[csrf-timeouts]]
+==== Timeouts
+One issue is that the expected CSRF token is stored in the HttpSession, so as soon as the HttpSession expires your configured `AccessDeniedHandler` will receive a InvalidCsrfTokenException. If you are using the default `AccessDeniedHandler`, the browser will get an HTTP 403 and display a poor error message.
+
+[NOTE]
+====
+One might ask why the expected `CsrfToken` isn't stored in a cookie by default. This is because there are known exploits in which headers (i.e. specify the cookies) can be set by another domain. This is the same reason Ruby on Rails http://weblog.rubyonrails.org/2011/2/8/csrf-protection-bypass-in-ruby-on-rails/[no longer skips CSRF checks when the header X-Requested-With is present]. See http://lists.webappsec.org/pipermail/websecurity_lists.webappsec.org/2011-February/007533.html[this webappsec.org thread] for details on how to perform the exploit. Another disadvantage is that by removing the state (i.e. the timeout) you lose the ability to forcibly terminate the token if it is compromised.
+====
+
+A simple way to mitigate an active user experiencing a timeout is to have some JavaScript that lets the user know their session is about to expire. The user can click a button to continue and refresh the session.
+
+Alternatively, specifying a custom `AccessDeniedHandler` allows you to process the `InvalidCsrfTokenException` any way you like. For an example of how to customize the `AccessDeniedHandler` refer to the provided links for both <<nsa-access-denied-handler,xml>> and https://github.com/spring-projects/spring-security/blob/3.2.0.RC1/config/src/test/groovy/org/springframework/security/config/annotation/web/configurers/NamespaceHttpAccessDeniedHandlerTests.groovy#L64[Java configuration].
+
+Finally, the application can be configured to use <<csrf-cookie,CookieCsrfTokenRepository>> which will not expire.
+As previously mentioned, this is not as secure as using a session, but in many cases can be good enough.
+
+
+[[csrf-login]]
+==== Logging In
+In order to protect against http://en.wikipedia.org/wiki/Cross-site_request_forgery#Forging_login_requests[forging log in requests] the log in form should be protected against CSRF attacks too. Since the `CsrfToken` is stored in HttpSession, this means an HttpSession will be created as soon as `CsrfToken` token attribute is accessed. While this sounds bad in a RESTful / stateless architecture the reality is that state is necessary to implement practical security. Without state, we have nothing we can do if a token is compromised. Practically speaking, the CSRF token is quite small in size and should have a negligible impact on our architecture.
+
+A common technique to protect the log in form is by using a javascript function to obtain a valid CSRF token before the form submission. By doing this, there is no need to think about session timeouts (discussed in the previous section) because the session is created right before the form submission (assuming that <<csrf-cookie,CookieCsrfTokenRepository>> isn't configured instead), so the user can stay on the login page and submit the username/password when he wants. In order to achieve this, you can take advantage of the `CsrfTokenArgumentResolver` provided by Spring Security and expose an endpoint like it's described on <<mvc-csrf-resolver,here>>.
+
+
+[[csrf-logout]]
+==== Logging Out
+Adding CSRF will update the LogoutFilter to only use HTTP POST. This ensures that log out requires a CSRF token and that a malicious user cannot forcibly log out your users.
+
+One approach is to use a form for log out. If you really want a link, you can use JavaScript to have the link perform a POST (i.e. maybe on a hidden form). For browsers with JavaScript that is disabled, you can optionally have the link take the user to a log out confirmation page that will perform the POST.
+
+If you really want to use HTTP GET with logout you can do so, but remember this is generally not recommended. For example, the following Java Configuration will perform logout with the URL /logout is requested with any HTTP method:
+
+[source,java]
+----
+@EnableWebSecurity
+public class WebSecurityConfig extends
+WebSecurityConfigurerAdapter {
+
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		http
+			.logout()
+				.logoutRequestMatcher(new AntPathRequestMatcher("/logout"));
+	}
+}
+----
+
+[[csrf-multipart]]
+==== Multipart (file upload)
+There are two options to using CSRF protection with multipart/form-data. Each option has its tradeoffs.
+
+* <<csrf-multipartfilter,Placing MultipartFilter before Spring Security>>
+* <<csrf-include-csrf-token-in-action,Include CSRF token in action>>
+
+[NOTE]
+====
+Before you integrate Spring Security's CSRF protection with multipart file upload, ensure that you can upload without the CSRF protection first. More information about using multipart forms with Spring can be found within the http://docs.spring.io/spring/docs/3.2.x/spring-framework-reference/html/mvc.html#mvc-multipart[17.10 Spring's multipart (file upload) support] section of the Spring reference and the http://docs.spring.io/spring/docs/3.2.x/javadoc-api/org/springframework/web/multipart/support/MultipartFilter.html[MultipartFilter javadoc].
+====
+
+[[csrf-multipartfilter]]
+===== Placing MultipartFilter before Spring Security
+The first option is to ensure that the `MultipartFilter` is specified before the Spring Security filter. Specifying the `MultipartFilter` before the Spring Security filter means that there is no authorization for invoking the `MultipartFilter` which means anyone can place temporary files on your server. However, only authorized users will be able to submit a File that is processed by your application. In general, this is the recommended approach because the temporary file upload should have a negligble impact on most servers.
+
+To ensure `MultipartFilter` is specified before the Spring Security filter with java configuration, users can override beforeSpringSecurityFilterChain as shown below:
+
+[source,java]
+----
+public class SecurityApplicationInitializer extends AbstractSecurityWebApplicationInitializer {
+
+	@Override
+	protected void beforeSpringSecurityFilterChain(ServletContext servletContext) {
+		insertFilters(servletContext, new MultipartFilter());
+	}
+}
+----
+
+To ensure `MultipartFilter` is specified before the Spring Security filter with XML configuration, users can ensure the <filter-mapping> element of the `MultipartFilter` is placed before the springSecurityFilterChain within the web.xml as shown below:
+
+[source,xml]
+----
+<filter>
+	<filter-name>MultipartFilter</filter-name>
+	<filter-class>org.springframework.web.multipart.support.MultipartFilter</filter-class>
+</filter>
+<filter>
+	<filter-name>springSecurityFilterChain</filter-name>
+	<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+</filter>
+<filter-mapping>
+	<filter-name>MultipartFilter</filter-name>
+	<url-pattern>/*</url-pattern>
+</filter-mapping>
+<filter-mapping>
+	<filter-name>springSecurityFilterChain</filter-name>
+	<url-pattern>/*</url-pattern>
+</filter-mapping>
+----
+
+[[csrf-include-csrf-token-in-action]]
+===== Include CSRF token in action
+If allowing unauthorized users to upload temporariy files is not acceptable, an alternative is to place the `MultipartFilter` after the Spring Security filter and include the CSRF as a query parameter in the action attribute of the form. An example with a jsp is shown below
+
+[source,xml]
+----
+<form action="./upload?${_csrf.parameterName}=${_csrf.token}" method="post" enctype="multipart/form-data">
+----
+
+The disadvantage to this approach is that query parameters can be leaked. More genearlly, it is considered best practice to place sensitive data within the body or headers to ensure it is not leaked. Additional information can be found in http://www.w3.org/Protocols/rfc2616/rfc2616-sec15.html#sec15.1.3[RFC 2616 Section 15.1.3 Encoding Sensitive Information in URI's].
+
+==== HiddenHttpMethodFilter
+The HiddenHttpMethodFilter should be placed before the Spring Security filter. In general this is true, but it could have additional implications when protecting against CSRF attacks.
+
+Note that the HiddenHttpMethodFilter only overrides the HTTP method on a POST, so this is actually unlikely to cause any real problems. However, it is still best practice to ensure it is placed before Spring Security's filters.
+
+=== Overriding Defaults
+Spring Security's goal is to provide defaults that protect your users from exploits. This does not mean that you are forced to accept all of its defaults.
+
+For example, you can provide a custom CsrfTokenRepository to override the way in which the `CsrfToken` is stored.
+
+You can also specify a custom RequestMatcher to determine which requests are protected by CSRF (i.e. perhaps you don't care if log out is exploited). In short, if Spring Security's CSRF protection doesn't behave exactly as you want it, you are able to customize the behavior. Refer to the <<nsa-csrf>> documentation for details on how to make these customizations with XML and the `CsrfConfigurer` javadoc for details on how to make these customizations when using Java configuration.

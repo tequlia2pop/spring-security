@@ -1,0 +1,339 @@
+= Spring Security Reference
+Doc Writer <tequlia2pop@gmail.com>
+:toc: left
+:homepage: http://docs.spring.io/spring-security/site/docs/current/reference/htmlsingle/#el-access
+
+[[el-access]]
+== 基于表达式的访问控制
+Spring Security 3.0 引入了使用 Spring EL 表达式作为授权机制的能力，以及简单地使用之前已经看到的配置属性和访问决策选项。基于表达式的访问控制建立在同一架构上，但允许将复杂的 boolean 逻辑封装在单个表达式中。
+
+
+=== 概述
+Spring Security 使用 Spring EL 来支持表达式，如果你想更深入地理解这个话题，你应该看看它是如何工作的。使用“根对象”作为评估上下文的一部分来评估表达式。Spring Security 使用特定的 Web 类和方法安全类作为根对象，以提供内置的表达式来访问值（如当前 principal）。
+
+
+[[el-common-built-in]]
+==== 常见的内置表达式
+表达式根对象的根类是 `SecurityExpressionRoot`。这提供了一些可用于 Web 和方法安全性的常用表达式。
+
+[[common-expressions]]
+.常见的内置表达式
+|===
+| 表达式 | 描述
+
+| `hasRole([role])`
+| Returns `true` if the current principal has the specified role. By default if the supplied role does not start with 'ROLE_' it will be added. This can be customized by modifying the `defaultRolePrefix` on `DefaultWebSecurityExpressionHandler`.
+
+| `hasAnyRole([role1,role2])`
+| Returns `true` if the current principal has any of the supplied roles (given as a comma-separated list of strings). By default if the supplied role does not start with 'ROLE_' it will be added. This can be customized by modifying the `defaultRolePrefix` on `DefaultWebSecurityExpressionHandler`.
+
+| `hasAuthority([authority])`
+| 如果当前 principal 具有指定的权限，则返回 `true`
+
+| `hasAnyAuthority([authority1,authority2])`
+| 如果当前 principal 具有提供的任意角色（以逗号分隔的字符串列表形式给出），则返回 `true`
+
+| `principal`
+| 允许直接访问表示当前用户的 principal 对象
+
+| `authentication`
+| 允许直接访问从 `SecurityContext` 获得的当前 `Authentication` 对象
+
+| `permitAll`
+| Always evaluates to `true`
+
+| `denyAll`
+| Always evaluates to `false`
+
+| `isAnonymous()`
+| Returns `true` if the current principal is an anonymous user
+
+| `isRememberMe()`
+| Returns `true` if the current principal is a remember-me user
+
+| `isAuthenticated()`
+| Returns `true` if the user is not anonymous
+
+| `isFullyAuthenticated()`
+| Returns `true` if the user is not an anonymous or a remember-me user
+
+| `hasPermission(Object target, Object permission)`
+| 根据给定的 permission，如果用户可以访问所提供的 target，则返回 `true`。例如，`hasPermission(domainObject, 'read')`
+
+| `hasPermission(Object targetId, String targetType, Object permission)`
+| 根据给定的 permission，如果用户可以访问所提供的 target，则返回 `true`。例如，`hasPermission(1, 'com.example.domain.Message', 'read')`
+|===
+
+
+
+[[el-access-web]]
+=== Web 安全的表达式
+要使用表达式来保护各个 URL，你首先需要将 `<http>` 元素中的 `use-expressions` 属性设置为 `true`。
+Spring Security 期望 `<intercept-url>` 元素的 `access` 属性包含了 Spring EL 表达式。
+表达式的计算结果为布尔值，它定义了是否应允许访问。
+例如：
+
+[source,xml]
+----
+
+<http>
+	<intercept-url pattern="/admin*"
+		access="hasRole('admin') and hasIpAddress('192.168.1.0/24')"/>
+	...
+</http>
+
+----
+
+我们在这里定义了应用程序的 "admin" 区域（由 URL pattern 定义）应该仅对授予权限 "admin" 且其 IP 地址与本地子网匹配的用户可用。
+我们已经在上一节中看到了内置的 `hasRole` 表达式。
+表达式 `hasIpAddress` 是一个特定于 Web 安全的额外的内置表达式。
+它由 `WebSecurityExpressionRoot` 类定义，在评估 web-access 表达式时，它的一个实例用作表达式根对象。
+这个对象也直接暴露了 `HttpServletRequest` 对象，它名为 `request`，所以你可以直接在表达式中调用请求。
+如果使用了表达式，一个 `WebExpressionVoter` 将被添加到 `AccessDecisionManager`，它有名称空间使用。
+因此，如果你没有使用名称空间并且想使用表达式，则必须将其中一个添加到配置中。
+
+[[el-access-web-beans]]
+==== 在 Web 安全表达式中引用 bean
+
+如果你想扩展可用的表达式，你可以很容易地引用任何你公开的 Spring Bean。
+例如，假设你有一个名为 `webSecurity` 的 Bean，其中包含以下方法签名：
+
+[source,java]
+----
+public class WebSecurity {
+		public boolean check(Authentication authentication, HttpServletRequest request) {
+				...
+		}
+}
+----
+
+你可以使用下面的代码引用该方法：
+
+[source,xml]
+----
+<http>
+	<intercept-url pattern="/user/**"
+		access="@webSecurity.check(authentication,request)"/>
+	...
+</http>
+----
+
+或者使用 Java 配置
+
+
+[source,java]
+----
+http
+		.authorizeRequests()
+				.antMatchers("/user/**").access("@webSecurity.check(authentication,request)")
+				...
+----
+
+[[el-access-web-path-variables]]
+==== Web 安全表达式中的路径变量
+
+有时，能够引用 URL 中的路径变量是很好的。
+例如，考虑一个 RESTful 应用程序，它通过 URL 路径中的 id 以 `/user/{userId}` 格式来查找用户。
+
+通过将路径变量放入 pattern，你可以轻松引用它。
+例如，如果你有一个名为 `webSecurity` 的 Bean，其中包含以下方法签名：
+
+[source,java]
+----
+public class WebSecurity {
+		public boolean checkUserId(Authentication authentication, int id) {
+				...
+		}
+}
+----
+
+你可以使用下面的代码引用该方法：
+
+[source,xml]
+----
+<http>
+	<intercept-url pattern="/user/{userId}/**"
+		access="@webSecurity.checkUserId(authentication,#userId)"/>
+	...
+</http>
+----
+
+或者使用 Java 配置
+
+[source,java]
+----
+http
+		.authorizeRequests()
+				.antMatchers("/user/{userId}/**").access("@webSecurity.checkUserId(authentication,#userId)")
+				...
+----
+
+In both configurations URLs that match would pass in the path variable (and convert it) into checkUserId method.
+在这两个配置中，会将匹配的 URL 传递给路径变量传递（并将其转换为） checkUserId 方法。
+例如，如果 URL 是 `/user/123/resource`，则传递的 id 将是 `123`。
+
+=== 方法安全表达式
+方法安全性比起简单的允许或拒绝规则要复杂一些。Spring Security 3.0 引入了一些新的注解，以便对表达式的使用提供全面的支持。
+
+
+[[el-pre-post-annotations]]
+==== @Pre 和 @Post 注解
+有四个支持表达式属性的注解，它们允许事前调用和事后调用的授权检查，并支持对提交的集合参数或返回值进行过滤。它们是 `@PreAuthorize`、 `@PreFilter`、`@PostAuthorize` 和 `@PostFilter`。通过 `global-method-security` 名称空间元素来启用这些注解的使用：
+
+[source,xml]
+----
+<global-method-security pre-post-annotations="enabled"/>
+----
+
+===== 使用 @PreAuthorize 和 @PostAuthorize来控制访问
+最明显有用的注解是 `@PreAuthorize`，它决定一个方法是否可以被调用。例如（来自 "Contacts" 示例应用程序）
+
+[source,java]
+----
+@PreAuthorize("hasRole('USER')")
+public void create(Contact contact);
+----
+
+这意味着只有具有角 "ROLE_USER" 的用户才允许访问。显然，使用传统配置和所需角色的简单配置属性可以轻松实现相同的目的。但是，
+
+[source,java]
+----
+@PreAuthorize("hasPermission(#contact, 'admin')")
+public void deletePermission(Contact contact, Sid recipient, Permission permission);
+----
+
+这里我们实际上使用一个方法参数作为表达式的一部分来决定当前用户是否具有给定 contact 的 "admin" 权限。内置的 `hasPermission()` 表达式通过应用程序上下文链接到 Spring Security ACL 模块，我们 <<el-permission-evaluator,将会在下面看到>>。你可以访问任意的方法参数，只需将名称作为表达式变量即可。
+
+Spring Security 可以通过多种方法来解析方法参数。Spring Security 使用 `DefaultSecurityParameterNameDiscoverer` 来发现参数名称。默认情况下，the following options are tried for a method as a whole.
+
+* 如果 Spring Security 的 `@P' 注解位于方法的单个参数上，将使用该参数值。这对于使用 JDK 8 之前的 JDK 编译的接口很有用，它不包含任何有关参数名称的信息。例如：
+
++
+
+[source,java]
+----
+import org.springframework.security.access.method.P;
+
+...
+
+@PreAuthorize("#c.name == authentication.name")
+public void doSomething(@P("c") Contact contact);
+----
+
++
+
+在幕后，这个使用实现使用了 `AnnotationParameterNameDiscoverer`，它可以被定制以支持任何指定注解的值属性。
+
+* 如果 Spring Data 的 `@Param` 注解位于方法的至少一个参数上，将使用该参数值。这对于使用 JDK 8 之前的 JDK 编译的接口很有用，它不包含任何有关参数名称的信息。例如：
+
++
+
+[source,java]
+----
+import org.springframework.data.repository.query.Param;
+
+...
+
+@PreAuthorize("#n == authentication.name")
+Contact findContactByName(@Param("n") String name);
+----
+
++
+
+在幕后，这个使用实现使用了 `AnnotationParameterNameDiscoverer`，它可以被定制以支持任何指定注解的值属性。
+
+* 如果使用 JDK 8 来编译带有 -parameters 参数的源代码，并且正在使用 Spring 4+，那么使用标准的 JDK 反射 API 来发现参数名。这适用于类和接口。
+
+* 最后，如果代码是使用 debug 符号编译的，那么将使用 debug 符号来发现参数名称。这将不适用于接口，因为它们没有关于参数名称的调试信息。 对于接口，必须使用注解或 JDK 8 方法。
+
+.[[el-pre-post-annotations-spel]]
+--
+表达式中提供了所有的 Spring-EL 功能，因此你还可以访问参数的属性。例如，如果你想要某个特定方法仅允许访问其用户名与 contact 匹配的用户，则可以写入
+--
+
+[source,java]
+----
+@PreAuthorize("#contact.name == authentication.name")
+public void doSomething(Contact contact);
+----
+
+这里我们访问另一个内置表达式 `authentication`，它是存储在安全上下文中的 `Authentication`。你还可以使用表达式 `principal` 直接访问 "principal" 属性。该值通常是一个 `UserDetails`实例，因此你可以使用 `principal.username` 或 `principal.enabled` 这样的表达式。
+
+.[[el-pre-post-annotations-post]]
+--
+通常，在调用方法后，你可能希望执行访问控制检查。这可以使用 `@PostAuthorize` 注解来实现。要从一个方法访问返回值，请在表达式中使用内置名称 `returnObject`。
+--
+
+===== 使用 @PreFilter 和 @PostFilter 执行过滤
+你可能已经知道，Spring Security 支持对集合和数组进行过滤，现在可以使用表达式来实现。这通常对方法的返回值执行。例如：
+
+[source,java]
+----
+@PreAuthorize("hasRole('USER')")
+@PostFilter("hasPermission(filterObject, 'read') or hasPermission(filterObject, 'admin')")
+public List<Contact> getAll();
+----
+
+当使用 `@PostFilter` 注解时，Spring Security 会遍历返回的集合，并删除所提供的表达式结果为 false 的所有元素。名称 `filterObject` 指的是集合中的当前对象。你也可以在方法调用之前使用 `@PreFilter` 执行过滤，虽然这是一个不常见的要求。语法是相同的，但如果有一个以上的参数是一个集合类型，那么你必须使用这个注解的 `filterTarget` 属性来选择一个。
+
+请注意，过滤显然不能替代调整数据的检索查询。如果你要过滤大的集合并删除许多条目，那么这可能是低效的。
+
+
+[[el-method-built-in]]
+==== 内置的表达式
+有一些特定于方法安全性的内置表达式，我们在上面已经使用过。`filterTarget` 和 `returnValue` 的值很简单，但需要仔细看看如何使用 `hasPermission()` 表达式。
+
+
+[[el-permission-evaluator]]
+===== PermissionEvaluator 接口
+`hasPermission()` 表达式被委托给 `PermissionEvaluator` 实例。它旨在桥接表达式系统和 Spring Security 的 ACL 系统，允许你基于抽象权限指定域对象的授权约束。它没有显式地依赖 ACL 模块，因此如果需要，你可以将它替换为替代实现。该接口有两个方法：
+
+[source,java]
+----
+boolean hasPermission(Authentication authentication, Object targetDomainObject,
+							Object permission);
+
+boolean hasPermission(Authentication authentication, Serializable targetId,
+							String targetType, Object permission);
+----
+
+它直接映射到表达式的可用版本，除了不提供第一个参数（`Authentication` 对象）。第一个方法用于已经加载的访问被控制的领域对象的情况。如果当前用户具有该对象的给定权限，则表达式将返回 true。第二个版本用于未加载对象但其标识符已知的情况。还需要领域对象的抽象的 "type" 说明符，它允许加载正确的 ACL 权限。这在传统上是对象的 Java 类，但不一定要与权限的加载方式一致。
+
+要使用 `hasPermission()` 表达式，必须在应用程序上下文中显式配置一个 `PermissionEvaluator`。这看起来像是这样：
+
+[source,xml]
+----
+<security:global-method-security pre-post-annotations="enabled">
+    <security:expression-handler ref="expressionHandler"/>
+</security:global-method-security>
+
+<bean id="expressionHandler" class=
+"org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler">
+	<property name="permissionEvaluator" ref="myPermissionEvaluator"/>
+</bean>
+----
+
+其中 `myPermissionEvaluator` 是实现了 `PermissionEvaluator` 的 bean。通常这将是 ACL 模块的实现，称为 `AclPermissionEvaluator`。有关更多详细信息，请参阅 "Contacts" 示例应用程序的配置。
+
+===== 方法安全的元注解
+
+你可以为方法安全使用元注解，这使得你的代码更为可读。
+如果你发现你在整个代码库中重复了相同的复杂表达式，使用元注解是特别方便的。
+例如，请考虑以下内容：
+
+[source,java]
+----
+@PreAuthorize("#contact.name == authentication.name")
+----
+
+为了不在各个地方重复以上的配置，我们可以创建一个元注解并改为使用它。
+
+[source,java]
+----
+@Retention(RetentionPolicy.RUNTIME)
+@PreAuthorize("#contact.name == authentication.name")
+public @interface ContactPermission {}
+----
+
+元注解可用于任何的 Spring Security 方法安全注解。
+为了保持符合规范，JSR-250 注解不支持元注解。
